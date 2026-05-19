@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-<head>
+<head><head>
+  <meta charset="UTF-8">
+  <title>Sistema Escala</title>
+
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
+</head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MOP 2026 — Mêntore Bank (Supabase) v2.0</title>
@@ -225,7 +233,19 @@ try {
   if (!window.supabase) {
     throw new Error('Biblioteca Supabase não carregou');
   }
-  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  supabase = window.supabase.createClient(
+
+  SUPABASE_URL,
+
+  SUPABASE_ANON_KEY,
+
+  {
+    auth: {
+      persistSession: false
+    }
+  }
+
+);
   console.log('✓ Cliente Supabase criado com sucesso');
 } catch(err) {
   console.error('✗ Erro ao criar cliente Supabase:', err);
@@ -298,10 +318,16 @@ async function loadFromSupabase(){
     
     const {mopRow, staffRow, escalaRow, progRow} = await Promise.race([loadData(), timeout]);
     
-    mopData = mopRow?.data || [];
-    staffData = staffRow?.data || [];
-    escData = escalaRow?.data || [];
-    schedData = progRow?.data || [];
+    mopData = Array.isArray(mopRow?.data)   ? mopRow.data   : [];
+    staffData = Array.isArray(mopRow?.data)
+  ? mopRow.data
+  : [];
+    escData = Array.isArray(mopRow?.data)
+  ? mopRow.data
+  : [];
+    schedData = Array.isArray(mopRow?.data)
+  ? mopRow.data
+  : [];
     console.log('Dados carregados:', {mop: mopData.length, staff: staffData.length, escala: escData.length, programacoes: schedData.length});
     
     // Garantir headers dinâmicos a partir dos objetos
@@ -312,7 +338,7 @@ async function loadFromSupabase(){
     escHeaders = Array.from(allEscKeys).filter(k=>!k.startsWith('_'));
     // extrair colunas de dias (formato "seg 01-01")
     ALL_DAY_COLS = escHeaders.filter(h => /(\d{2})[-\/](\d{2})$/.test(h) || /[a-z]{3}\s+\d{2}-\d{2}/i.test(h));
-    ALL_DAY_COLS.sort();
+    ALL_DAY_COLS.sort((a,b)=>{    let ma = a.match(/(\d{2})-(\d{2})/);   let mb = b.match(/(\d{2})-(\d{2})/);    if(!ma || !mb) return 0;    let da = ma[2] + ma[1];   let db = mb[2] + mb[1];    return da.localeCompare(db);  });
     MONTHS = [...new Set(ALL_DAY_COLS.map(c=>{ let m=c.match(/(\d{2})[-\/](\d{2})$/); return m?m[2]:null; }).filter(Boolean))].sort();
     curMonth = MONTHS[0] || '';
     
@@ -415,7 +441,7 @@ window.onload = () => {
     document.getElementById('btn-save-force').addEventListener('click', ()=>syncAllToSupabase());
     document.getElementById('btn-export').addEventListener('click', ()=>{
       let wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mopData), 'MOP');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(    mopData.map(r => {      let c = {...r};      delete c._id;     delete c._src;      return c;    })  ), 'MOP');
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(staffData), 'STAFF');
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(escData), 'Escala');
       XLSX.writeFile(wb, 'MOP_2026_backup.xlsx');
@@ -450,42 +476,137 @@ window.onload = () => {
 function openAdd(){/* similar ao original */ let grid=$('add-grid'); grid.innerHTML=''; let fields=[{k:'Matrícula',l:'Matrícula'},{k:'Colaborador',l:'Colaborador',f:true},{k:'Status',l:'Status',s:STATUS_OPTS},{k:'Célula',l:'Célula',s:uniq(mopData,'Célula')},{k:'Tipo',l:'Tipo',s:['5X2','6X1']},{k:'Reporte',l:'Reporte',s:uniq(mopData,'Reporte')},{k:'Horario',l:'Horário'},{k:'Saida',l:'Saída'}]; fields.forEach(f=>{ let d=document.createElement('div'); d.className='fgg'+(f.f?' full':''); let lbl=document.createElement('label'); lbl.className='flb'; lbl.textContent=f.l; d.appendChild(lbl); let inp=f.s?document.createElement('select'):document.createElement('input'); inp.className='fi'; inp.id='ad-'+f.k; if(f.s) f.s.forEach(o=>{ let op=document.createElement('option'); op.textContent=o; inp.appendChild(op); }); else inp.placeholder=f.l; d.appendChild(inp); grid.appendChild(d); }); openOv('ov-add'); }
 function saveAdd(){ let row={_id:Date.now(),_src:curTab==='staff'?'staff':'mop'}; document.querySelectorAll('#add-grid [id^="ad-"]').forEach(el=>{ row[el.id.replace('ad-','')]=el.value; }); if(!row.Colaborador){toast('Nome necessário','var(--red)');return;} if(curTab==='staff') staffData.push(row); else mopData.push(row); applyScheduledStatuses(); if(curTab==='staff') renderStaff(); else renderMop(); closeOv('ov-add'); updateMissing(); openFill(row); markUnsaved(); }
 function renderMop(){
-  console.log('renderMop chamado, mopData.length:', mopData.length);
-  let q=$('mop-q').value.toLowerCase(),st=$('mop-st').value,cel=$('mop-cel').value,rep=$('mop-rep').value; 
-  let data=srt(mopData.filter(r=> (!q||r.Colaborador?.toLowerCase().includes(q)) && (!st||r.Status===st) && (!cel||r.Célula===cel) && (!rep||r.Reporte===rep) ),'mop'); 
-  $('bg-mop').innerText=data.length; 
-  let tb=$('mop-tb'); 
-  tb.innerHTML=''; 
-  if(!data.length){tb.innerHTML='<tr><td colspan="10">Nenhum resultado</td></tr>';return;} 
-  data.forEach(row=>{ 
-    let tr=document.createElement('tr'); 
-    mopHeaders.forEach(col=>{ 
-      let td=document.createElement('td'); 
-      if(col==='Status') td=makeScCell(row); 
-      else td.innerText=row[col]||''; 
-      tr.appendChild(td); 
-    }); 
-    tb.appendChild(tr); 
-  }); 
+
+  let q = $('mop-q').value.toLowerCase();
+  let st = $('mop-st').value;
+  let cel = $('mop-cel').value;
+  let rep = $('mop-rep').value;
+
+  let data = srt(
+
+    mopData.filter(r =>
+
+      (!q || r.Colaborador?.toLowerCase().includes(q)) &&
+      (!st || r.Status === st) &&
+      (!cel || r.Célula === cel) &&
+      (!rep || r.Reporte === rep)
+
+    ),
+
+    'mop'
+
+  );
+
+  $('bg-mop').innerText = data.length;
+
+  let th = $('mop-th');
+
+  th.innerHTML = mopHeaders.map(col =>
+
+    `<th>${col}</th>`
+
+  ).join('');
+
+  let tb = $('mop-tb');
+
+  tb.innerHTML = '';
+
+  if(!data.length){
+
+    tb.innerHTML =
+      '<tr><td colspan="20">Nenhum resultado</td></tr>';
+
+    return;
+  }
+
+  data.forEach(row => {
+
+    let tr = document.createElement('tr');
+
+    mopHeaders.forEach(col => {
+
+      let td = document.createElement('td');
+
+      if(col === 'Status'){
+
+        td.innerHTML = badge(row[col]);
+
+      } else {
+
+        td.innerText = row[col] || '';
+
+      }
+
+      tr.appendChild(td);
+
+    });
+
+    tb.appendChild(tr);
+
+  });
+
+} 
   console.log('renderMop completou, linhas renderizadas:', data.length);
 }
 function renderStaff(){
-  console.log('renderStaff chamado, staffData.length:', staffData.length);
-  let q=$('staff-q').value.toLowerCase(),st=$('staff-st').value; 
-  let data=srt(staffData.filter(r=>(!q||r.Colaborador?.toLowerCase().includes(q)) && (!st||r.Status===st)),'staff'); 
-  $('bg-staff').innerText=data.length; 
-  let tb=$('staff-tb'); 
-  tb.innerHTML=''; 
-  data.forEach(row=>{ 
-    let tr=document.createElement('tr'); 
-    staffHeaders.forEach(col=>{ 
-      let td=document.createElement('td'); 
-      if(col==='Status') td=makeScCell(row); 
-      else td.innerText=row[col]||''; 
-      tr.appendChild(td); 
-    }); 
-    tb.appendChild(tr); 
-  }); 
+
+  let q = $('staff-q').value.toLowerCase();
+  let st = $('staff-st').value;
+
+  let data = srt(
+
+    staffData.filter(r =>
+
+      (!q || r.Colaborador?.toLowerCase().includes(q)) &&
+      (!st || r.Status === st)
+
+    ),
+
+    'staff'
+
+  );
+
+  $('bg-staff').innerText = data.length;
+
+  let th = $('staff-th');
+
+  th.innerHTML = staffHeaders.map(col =>
+
+    `<th>${col}</th>`
+
+  ).join('');
+
+  let tb = $('staff-tb');
+
+  tb.innerHTML = '';
+
+  data.forEach(row => {
+
+    let tr = document.createElement('tr');
+
+    staffHeaders.forEach(col => {
+
+      let td = document.createElement('td');
+
+      if(col === 'Status'){
+
+        td.innerHTML = badge(row[col]);
+
+      } else {
+
+        td.innerText = row[col] || '';
+
+      }
+
+      tr.appendChild(td);
+
+    });
+
+    tb.appendChild(tr);
+
+  });
+
+} 
   console.log('renderStaff completou');
 }
 function renderEscala(){
@@ -512,7 +633,25 @@ function renderEscala(){
 function renderProg(){ let list=$('prog-list'); list.innerHTML=''; schedData.forEach(s=>{ let div=document.createElement('div'); div.innerText=s.colabName+': '+s.changes.length+' mudanças'; list.appendChild(div); }); $('bg-prog').innerText=schedData.length; }
 function makeScCell(row){ let td=document.createElement('td'); let sel=document.createElement('select'); STATUS_OPTS.forEach(o=>{let op=document.createElement('option');op.value=o;op.textContent=o;if(o===row.Status)op.selected=true;sel.appendChild(op);}); sel.onchange=()=>{ syncStatus(row.Colaborador, sel.value); }; td.appendChild(sel); return td; }
 function srt(data,tab){ let c=sortC[tab]; if(!c) return data; return data.slice().sort((a,b)=>{ let av=a[c]||'',bv=b[c]||''; return av<bv?-sortD[tab]:av>bv?sortD[tab]:0; }); }
-function switchTab(name){ curTab=name; ['mop','staff','escala','prog'].forEach(t=>$('pnl-'+t).style.display=t===name?'':'none'); $('tab-'+t).classList.toggle('on',t===name); render(name); }
+function switchTab(name){
+
+  curTab = name;
+
+  ['mop','staff','escala','prog'].forEach(t => {
+
+    $('pnl-' + t).style.display =
+      t === name ? '' : 'none';
+
+    $('tab-' + t).classList.toggle(
+      'on',
+      t === name
+    );
+
+  });
+
+  render(name);
+
+}
 function render(tab){ if(tab==='mop')renderMop(); else if(tab==='staff')renderStaff(); else if(tab==='escala')renderEscala(); else renderProg(); }
 function sortBy(tab,col){ if(sortC[tab]===col) sortD[tab]*=-1; else{ sortC[tab]=col; sortD[tab]=1; } render(tab); }
 let schedEditId=null, schedCount=0;
