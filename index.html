@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Anti-cache para GitHub Pages -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>MOP 2026 — Mêntore Bank</title>
+  <link rel="stylesheet" href="style.css?v=29">
+  <!-- Supabase JS (CDN estável) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- XLSX Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Fontes -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+<div id="app">
+
+<!-- ===== HEADER ===== -->
+<header>
+  <div class="logo">
+    <span class="logo-dot"></span>Mêntore Bank&nbsp;<span style="color:var(--tx3);font-weight:400;font-size:14px">/ MOP</span>
+  </div>
+  <div id="conn-badge" class="conn spin">🔄 Conectando Supabase...</div>
+  <div class="hact">
+    <div class="ub" id="ub"><span class="udot"></span>Sincronizando…</div>
+    <button class="btn btn-ghost btn-sm" id="btn-save-force">💾 Salvar agora</button>
+    <button class="btn btn-ghost btn-sm eo" id="btn-add">+ Novo</button>
+    <button class="btn btn-ok btn-sm" id="btn-export">⬇ Exportar cópia</button>
+  </div>
+</header>
+
+<!-- Barra de alerta colaboradores sem escala -->
+<div class="abar" id="abar">
+  ⚠️ <span id="atxt"></span>
+  <span class="achip" id="btn-miss-alert">Ver →</span>
+</div>
+
+<!-- ===== TABS ===== -->
+<div class="tabs">
+  <button class="tab on" id="tab-mop"    data-tab="mop">MOP    <span class="tbg"   id="bg-mop">0</span></button>
+  <button class="tab"    id="tab-staff"  data-tab="staff">Staff  <span class="tbg"   id="bg-staff">0</span></button>
+  <button class="tab"    id="tab-escala" data-tab="escala">Escala <span class="tbg"   id="bg-escala">0</span> <span class="tbg w" id="bg-miss" style="display:none">0</span></button>
+  <button class="tab"    id="tab-prog"   data-tab="prog">Programar Status <span class="tbg a" id="bg-prog">0</span></button>
+</div>
+
+<!-- ===== PAINEL MOP ===== -->
+<div id="pnl-mop">
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="mop-q" placeholder="Buscar…">
+    </div>
+    <div class="fg"><span class="fl">Status</span>  <select id="mop-st"  style="width:110px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Célula</span>  <select id="mop-cel" style="width:120px"><option value="">Todas</option></select></div>
+    <div class="fg"><span class="fl">Reporte</span> <select id="mop-rep" style="width:120px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Tipo</span>    <select id="mop-tip" style="width:75px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Grupo</span>   <select id="mop-grp" style="width:75px"><option value="">Todos</option></select></div>
+    <div class="spc"></div>
+  </div>
+  <div class="stats" id="mop-stats"></div>
+  <div class="tw">
+    <table>
+      <thead><tr id="mop-th"></tr></thead>
+      <tbody id="mop-tb"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===== PAINEL STAFF ===== -->
+<div id="pnl-staff" style="display:none">
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="staff-q" placeholder="Buscar…">
+    </div>
+    <div class="fg"><span class="fl">Status</span> <select id="staff-st"  style="width:110px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Cargo</span>  <select id="staff-car" style="width:160px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Tipo</span>   <select id="staff-tip" style="width:75px"><option value="">Todos</option></select></div>
+    <div class="spc"></div>
+  </div>
+  <div class="stats" id="staff-stats"></div>
+  <div class="tw">
+    <table>
+      <thead><tr id="staff-th"></tr></thead>
+      <tbody id="staff-tb"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===== PAINEL ESCALA ===== -->
+<div id="pnl-escala" style="display:none">
+  <div class="esc-hero">
+    <div>
+      <h2><span class="ico">📅</span> Controle de Escala</h2>
+      <p>Gerencie turnos, feriados e horários. Dados salvos automaticamente no Supabase.</p>
+    </div>
+    <div class="hact-r">
+      <button class="btn btn-ghost btn-sm eo" id="btn-bulk" style="color:#2dd4bf;border-color:rgba(45,212,191,.3)">⚙ Troca em massa</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="esc-q" placeholder="Buscar colaborador…">
+    </div>
+    <div class="fg"><span class="fl">Mês</span>          <select id="esc-mes" style="width:130px"></select></div>
+    <div class="fg"><span class="fl">Status</span>        <select id="esc-st"  style="width:110px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Célula</span>        <select id="esc-cel" style="width:130px"><option value="">Todas</option></select></div>
+    <div class="fg"><span class="fl">Tipo</span>          <select id="esc-tip" style="width:80px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Reporte</span>       <select id="esc-rep" style="width:130px"><option value="">Todos</option></select></div>
+    <div class="fg">
+      <span class="fl">Dia da semana</span>
+      <select id="esc-dow" style="width:130px">
+        <option value="">Todos</option>
+        <option value="seg">Segunda</option><option value="ter">Terça</option>
+        <option value="qua">Quarta</option><option value="qui">Quinta</option>
+        <option value="sex">Sexta</option><option value="sáb">Sábado</option>
+        <option value="dom">Domingo</option>
+        <option value="we">Fim de semana</option>
+        <option value="wd">Dias úteis</option>
+      </select>
+    </div>
+    <div class="spc"></div>
+    <label style="font-size:11px;color:var(--tx3);display:flex;align-items:center;gap:5px;cursor:pointer;">
+      <input type="checkbox" id="show-miss" style="width:auto">Sem escala
+    </label>
+  </div>
+
+  <div class="esc-kpis" id="esc-stats"></div>
+
+  <div class="esc-legend">
+    <span class="ll">Legenda</span>
+    <span class="lchip" style="background:#fef9c3;color:#713f12;border:1px solid rgba(253,224,71,.5)"><i style="background:#fef9c3;border:1px solid rgba(253,224,71,.5)"></i>Trabalho</span>
+    <span class="lchip"><i class="f"></i>Folga</span>
+    <span class="lchip"><i class="d"></i>Day Off</span>
+    <span class="lchip"><i class="v"></i>Férias</span>
+    <span class="lchip"><i class="a"></i>Afastado</span>
+    <span class="lchip" style="background:rgba(248,113,113,.12);color:#fca5a5;border:1px solid rgba(248,113,113,.3)"><i style="background:rgba(248,113,113,.55)"></i>Desligado</span>
+    <span class="lchip"><i class="h"></i>Feriado</span>
+    <span class="lchip"><i class="b"></i>BH</span>
+  </div>
+
+  <!-- Painel Troca em Massa -->
+  <div id="bulk-wrap" style="display:none;padding:0 20px 12px">
+    <div class="bulk-box">
+      <h3>⚙ Troca em massa</h3>
+      <div class="bulk-g" style="grid-template-columns:repeat(2,1fr)">
+        <div class="fgg"><label class="flb">👤 Líder</label>  <select class="fi" id="bulk-rep"><option value="">— Todos os líderes —</option></select></div>
+        <div class="fgg"><label class="flb">🏷 Célula</label> <select class="fi" id="bulk-cel"><option value="">— Todas as células —</option></select></div>
+      </div>
+      <div class="fgg" style="margin-top:8px">
+        <label class="flb">Colaboradores (Ctrl+clique para múltiplos)</label>
+        <select multiple class="fi bulk-colabs" id="bulk-colabs" size="5"></select>
+      </div>
+      <div class="bulk-g" style="margin-top:10px">
+        <div class="fgg"><label class="flb">Status geral</label>
+          <select class="fi" id="bk-status">
+            <option value="">— Manter —</option>
+            <option>Ativo</option><option>Desligado</option><option>Folga</option>
+            <option>Day Off</option><option>Férias</option><option>Afastado</option><option>BH</option>
+          </select>
+        </div>
+        <div class="fgg"><label class="flb">Status Sábado</label>
+          <select class="fi" id="bk-status-sab">
+            <option value="">— Não alterar —</option>
+            <option>Folga</option><option>Day Off</option><option>BH</option>
+          </select>
+        </div>
+        <div class="fgg"><label class="flb">Status Domingo</label>
+          <select class="fi" id="bk-status-dom">
+            <option value="">— Não alterar —</option>
+            <option>Folga</option><option>Day Off</option><option>BH</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <label class="flb">Horários (opcional)</label>
+        <div class="bulk-g">
+          <input type="time" class="fi" id="bk-hor" placeholder="Entrada">
+          <input type="time" class="fi" id="bk-p1"  placeholder="1ª Pausa">
+          <input type="time" class="fi" id="bk-alm" placeholder="Almoço">
+          <input type="time" class="fi" id="bk-p2"  placeholder="2ª Pausa">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-sm" id="btn-bulk-apply">✅ Aplicar até 31/12/2026</button>
+        <button class="btn btn-ghost btn-sm" id="btn-bulk-close">Fechar</button>
+        <span id="bulk-preview" style="font-size:11px;color:var(--amb)"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="esc-tip">
+    <b>Dica:</b> clique nos chips de turno para editar o dia. Alterações são sincronizadas automaticamente com o Supabase.
+  </div>
+
+  <div class="tw" id="esc-tw">
+    <table>
+      <thead><tr id="esc-th"></tr></thead>
+      <tbody id="esc-tb"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===== PAINEL PROGRAMAÇÕES ===== -->
+<div id="pnl-prog" style="display:none">
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="prog-q" placeholder="Buscar…">
+    </div>
+    <div class="fg">
+      <span class="fl">Filtro</span>
+      <select id="prog-flt" style="width:130px">
+        <option value="">Todas</option>
+        <option value="pending">Pendentes</option>
+        <option value="active">Em vigor</option>
+        <option value="done">Concluídas</option>
+      </select>
+    </div>
+    <div class="spc"></div>
+    <button class="btn btn-pri btn-sm eo" id="btn-prog-add">+ Nova programação</button>
+  </div>
+  <div class="stats" id="prog-stats"></div>
+  <div style="padding:14px 20px">
+    <div id="prog-empty" style="display:none;text-align:center;padding:36px;color:var(--tx3)">📅 Nenhuma programação.</div>
+    <div id="prog-list"></div>
+  </div>
+</div>
+
+</div><!-- /#app -->
+
+<!-- ================================================================
+     MODAIS
+     ================================================================ -->
+
+<!-- Modal: Novo Colaborador / Staff -->
+<div class="ov" id="ov-add">
+  <div class="modal lg">
+    <div class="mh">
+      <span class="mt" id="add-title">Novo Colaborador</span>
+      <button class="mx" data-close="ov-add">✕</button>
+    </div>
+    <div class="mb"><div class="fg3" id="add-grid"></div></div>
+    <div class="mf">
+      <button class="btn btn-ghost btn-sm" data-close="ov-add">Cancelar</button>
+      <button class="btn btn-pri btn-sm"   id="btn-add-save">Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Preencher Escala -->
+<div class="ov" id="ov-fill">
+  <div class="modal md">
+    <div class="mh">
+      <span class="mt">Preencher Escala</span>
+      <button class="mx" data-close="ov-fill">✕</button>
+    </div>
+    <div class="mb">
+      <div id="fill-name" style="font-weight:600;margin-bottom:14px"></div>
+      <div class="fg2">
+        <div class="fgg"><label class="flb">Horário entrada</label><input type="text" class="fi" id="fi-hor"  placeholder="08:00"></div>
+        <div class="fgg"><label class="flb">1ª Pausa</label>       <input type="text" class="fi" id="fi-p1"   placeholder="09:10"></div>
+        <div class="fgg"><label class="flb">Almoço</label>         <input type="text" class="fi" id="fi-alm"  placeholder="12:00"></div>
+        <div class="fgg"><label class="flb">2ª Pausa</label>       <input type="text" class="fi" id="fi-p2"   placeholder="15:10"></div>
+        <div class="fgg"><label class="flb">Saída</label>          <input type="text" class="fi" id="fi-sai"  placeholder="18:00"></div>
+        <div class="fgg"><label class="flb">Tipo</label>           <select class="fi" id="fi-tip"><option>5X2</option><option>6X1</option></select></div>
+      </div>
+      <div class="fgg" style="margin-top:10px">
+        <label class="flb">Admissão</label>
+        <input type="date" class="fi" id="fi-adm">
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-ghost btn-sm" data-close="ov-fill">Cancelar</button>
+      <button class="btn btn-pri btn-sm"   id="btn-fill-ok">✅ Adicionar à Escala</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Colaboradores sem Escala -->
+<div class="ov" id="ov-miss">
+  <div class="modal lg">
+    <div class="mh">
+      <span class="mt">⚠️ Sem escala</span>
+      <button class="mx" data-close="ov-miss">✕</button>
+    </div>
+    <div class="mb" id="miss-body"></div>
+    <div class="mf"><button class="btn btn-ghost btn-sm" data-close="ov-miss">Fechar</button></div>
+  </div>
+</div>
+
+<!-- Modal: Programação de Status -->
+<div class="ov" id="ov-prog">
+  <div class="modal lg">
+    <div class="mh">
+      <span class="mt">📅 Programação de status</span>
+      <button class="mx" data-close="ov-prog">✕</button>
+    </div>
+    <div class="mb">
+      <div class="fgg" style="margin-bottom:14px">
+        <label class="flb">Colaborador</label>
+        <select class="fi" id="prog-colab"></select>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:600">Mudanças</span>
+        <button class="btn btn-ghost btn-sm" id="btn-sc-add">+ Adicionar</button>
+      </div>
+      <div id="sc-list"></div>
+      <div class="sc-add" id="sc-add-row">+ Outra mudança</div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-ghost btn-sm" data-close="ov-prog">Cancelar</button>
+      <button class="btn btn-pri btn-sm"   id="btn-prog-save">💾 Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast de notificação -->
+<div id="toast">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"/></svg>
+  <span id="toast-msg"></span>
+</div>
+
+<script src="script.js?v=29"></script>
+</body>
+</html>
