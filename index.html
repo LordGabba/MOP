@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>MOP 2026 — Sistema de Gestão</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- XLSX Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    MOP 2026
+  </div>
+  <div class="header-center">
+    <span id="conn-badge" class="conn spin">⟳ Conectando...</span>
+    <span id="ub" class="ub"><span class="udot"></span>Não salvo</span>
+  </div>
+  <div class="hact">
+    <button class="btn btn-sm" id="btn-export" title="Exportar XLSX">⬇ Export</button>
+    <button class="btn btn-sm btn-pri" id="btn-sync" title="Sincronizar agora">⟳ Sync</button>
+  </div>
+</header>
+
+<!-- ===== TABS ===== -->
+<nav class="tabs">
+  <button class="tab on" id="tab-mop" onclick="switchTab('mop')">
+    👥 MOP <span class="tbg" id="bg-mop">0</span>
+  </button>
+  <button class="tab" id="tab-staff" onclick="switchTab('staff')">
+    🏢 Staff <span class="tbg" id="bg-staff">0</span>
+  </button>
+  <button class="tab" id="tab-escala" onclick="switchTab('escala')">
+    📅 Escala <span class="tbg a" id="bg-escala">0</span>
+  </button>
+  <button class="tab" id="tab-prog" onclick="switchTab('prog')">
+    🗓 Programações <span class="tbg" id="bg-prog">0</span>
+  </button>
+</nav>
+
+<!-- ===== LOADING OVERLAY ===== -->
+<div id="loading-overlay" class="loading-overlay">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <p id="loading-msg">Conectando ao Supabase...</p>
+  </div>
+</div>
+
+<!-- ===== PANEL MOP ===== -->
+<div id="pnl-mop" class="panel">
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="mop-q" placeholder="Buscar colaborador…">
+    </div>
+    <div class="fg">
+      <span class="fl">Status</span>
+      <select id="mop-st" style="width:110px"><option value="">Todos</option></select>
+    </div>
+    <div class="fg">
+      <span class="fl">Célula</span>
+      <select id="mop-cel" style="width:120px"><option value="">Todas</option></select>
+    </div>
+    <div class="fg">
+      <span class="fl">Reporte</span>
+      <select id="mop-rep" style="width:120px"><option value="">Todos</option></select>
+    </div>
+    <div class="fg">
+      <span class="fl">Tipo</span>
+      <select id="mop-tip" style="width:90px"><option value="">Todos</option></select>
+    </div>
+    <div class="spc"></div>
+    <button class="btn btn-pri btn-sm" id="btn-mop-add">+ Colaborador</button>
+  </div>
+  <div class="stats" id="mop-stats">
+    <div class="si"><span class="sl">Total</span><span class="sv cb" id="mop-tot">0</span></div>
+    <div class="si"><span class="sl">Ativos</span><span class="sv cg" id="mop-atv">0</span></div>
+    <div class="si"><span class="sl">Afastados</span><span class="sv ca" id="mop-afa">0</span></div>
+    <div class="si"><span class="sl">Férias</span><span class="sv cp" id="mop-fer">0</span></div>
+    <div class="si"><span class="sl">Desligados</span><span class="sv cr" id="mop-des">0</span></div>
+  </div>
+  <div class="tw">
+    <table id="mop-table">
+      <thead><tr id="mop-th"></tr></thead>
+      <tbody id="mop-tb"></tbody>
+    </table>
+    <div id="mop-empty" class="empty-state" style="display:none">
+      <span>👥</span>
+      <p>Nenhum colaborador encontrado.</p>
+      <button class="btn btn-pri" id="btn-mop-add2">+ Adicionar primeiro colaborador</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PANEL STAFF ===== -->
+<div id="pnl-staff" class="panel" style="display:none">
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="staff-q" placeholder="Buscar staff…">
+    </div>
+    <div class="fg">
+      <span class="fl">Status</span>
+      <select id="staff-st" style="width:110px"><option value="">Todos</option></select>
+    </div>
+    <div class="fg">
+      <span class="fl">Cargo</span>
+      <select id="staff-car" style="width:130px"><option value="">Todos</option></select>
+    </div>
+    <div class="fg">
+      <span class="fl">Tipo</span>
+      <select id="staff-tip" style="width:90px"><option value="">Todos</option></select>
+    </div>
+    <div class="spc"></div>
+    <button class="btn btn-pri btn-sm" id="btn-staff-add">+ Staff</button>
+  </div>
+  <div class="stats">
+    <div class="si"><span class="sl">Total</span><span class="sv cb" id="staff-tot">0</span></div>
+    <div class="si"><span class="sl">Ativos</span><span class="sv cg" id="staff-atv">0</span></div>
+    <div class="si"><span class="sl">Afastados</span><span class="sv ca" id="staff-afa">0</span></div>
+  </div>
+  <div class="tw">
+    <table id="staff-table">
+      <thead><tr id="staff-th"></tr></thead>
+      <tbody id="staff-tb"></tbody>
+    </table>
+    <div id="staff-empty" class="empty-state" style="display:none">
+      <span>🏢</span>
+      <p>Nenhum staff encontrado.</p>
+      <button class="btn btn-pri" id="btn-staff-add2">+ Adicionar staff</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PANEL ESCALA ===== -->
+<div id="pnl-escala" class="panel" style="display:none">
+  <div class="esc-hero">
+    <h2><span class="ico">📅</span> Escala de Trabalho</h2>
+    <div class="fg">
+      <span class="fl">Mês</span>
+      <select id="esc-mes" style="width:140px"></select>
+    </div>
+  </div>
+  <div class="esc-kpis">
+    <div class="kpi"><div class="kl">Colaboradores</div><div class="kv" id="esc-tot">0</div></div>
+    <div class="kpi g"><div class="kl">Trabalhando</div><div class="kv" id="esc-wk">0</div></div>
+    <div class="kpi a"><div class="kl">Folgas/DO</div><div class="kv" id="esc-off">0</div></div>
+    <div class="kpi r"><div class="kl">Sem escala</div><div class="kv" id="esc-miss">0</div></div>
+  </div>
+  <div class="esc-legend">
+    <span class="lchip"><i class="m"></i>Manhã</span>
+    <span class="lchip"><i class="t"></i>Tarde</span>
+    <span class="lchip"><i class="n"></i>Noite</span>
+    <span class="lchip"><i class="f"></i>Folga</span>
+    <span class="lchip"><i class="d"></i>Day Off</span>
+    <span class="lchip"><i class="v"></i>Férias</span>
+    <span class="lchip"><i class="a"></i>Afastado</span>
+    <span class="lchip"><i class="h"></i>Feriado</span>
+  </div>
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="esc-q" placeholder="Buscar…">
+    </div>
+    <div class="fg">
+      <span class="fl">Status</span>
+      <select id="esc-st" style="width:110px"><option value="">Todos</option></select>
+    </div>
+    <div class="fg">
+      <span class="fl">Célula</span>
+      <select id="esc-cel" style="width:120px"><option value="">Todas</option></select>
+    </div>
+    <div class="fg">
+      <span class="fl">Tipo</span>
+      <select id="esc-tip" style="width:90px"><option value="">Todos</option></select>
+    </div>
+    <div class="spc"></div>
+    <button class="btn btn-sm" id="btn-miss" style="color:var(--red);border-color:rgba(248,113,113,.3)">⚠ Sem escala</button>
+    <button class="btn btn-pri btn-sm" id="btn-esc-add">+ Add à escala</button>
+  </div>
+  <div class="tw">
+    <table id="esc-table">
+      <thead><tr id="esc-th"></tr></thead>
+      <tbody id="esc-tb"></tbody>
+    </table>
+    <div id="esc-empty" class="empty-state" style="display:none">
+      <span>📅</span><p>Nenhum dado de escala.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PANEL PROG ===== -->
+<div id="pnl-prog" class="panel" style="display:none">
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="prog-q" placeholder="Buscar…">
+    </div>
+    <div class="fg">
+      <span class="fl">Filtro</span>
+      <select id="prog-flt" style="width:130px">
+        <option value="">Todas</option>
+        <option value="pending">Pendentes</option>
+        <option value="active">Em vigor</option>
+        <option value="done">Concluídas</option>
+      </select>
+    </div>
+    <div class="spc"></div>
+    <button class="btn btn-pri btn-sm" id="btn-prog-add">+ Nova programação</button>
+  </div>
+  <div class="stats">
+    <div class="si"><span class="sl">Total</span><span class="sv cb" id="prog-tot">0</span></div>
+    <div class="si"><span class="sl">Em vigor</span><span class="sv cg" id="prog-atv">0</span></div>
+    <div class="si"><span class="sl">Pendentes</span><span class="sv ca" id="prog-pend">0</span></div>
+  </div>
+  <div style="padding:14px 20px">
+    <div id="prog-empty" class="empty-state" style="display:none">
+      <span>🗓</span><p>Nenhuma programação de status.</p>
+    </div>
+    <div id="prog-list"></div>
+  </div>
+</div>
+
+<!-- ===== MODALS ===== -->
+
+<!-- Modal: Adicionar Colaborador/Staff -->
+<div class="ov" id="ov-add">
+  <div class="modal lg">
+    <div class="mh">
+      <span class="mt" id="add-title">Novo Colaborador</span>
+      <button class="mx" data-close="ov-add">✕</button>
+    </div>
+    <div class="mb">
+      <div id="add-grid" class="fg3"></div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-sm" data-close="ov-add">Cancelar</button>
+      <button class="btn btn-pri btn-sm" id="btn-add-save">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Sem Escala -->
+<div class="ov" id="ov-miss">
+  <div class="modal lg">
+    <div class="mh">
+      <span class="mt">⚠️ Colaboradores sem escala</span>
+      <button class="mx" data-close="ov-miss">✕</button>
+    </div>
+    <div class="mb" id="miss-body"></div>
+    <div class="mf">
+      <button class="btn btn-sm" data-close="ov-miss">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Programação de Status -->
+<div class="ov" id="ov-prog">
+  <div class="modal lg">
+    <div class="mh">
+      <span class="mt">📅 Programação de status</span>
+      <button class="mx" data-close="ov-prog">✕</button>
+    </div>
+    <div class="mb">
+      <div class="fgg" style="margin-bottom:14px">
+        <label class="flb">Colaborador</label>
+        <select class="fi" id="prog-colab"></select>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:13px;font-weight:600">Mudanças de status</span>
+        <button class="btn btn-sm btn-pri" id="btn-sc-add">+ Adicionar</button>
+      </div>
+      <div id="sc-list"></div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-sm" data-close="ov-prog">Cancelar</button>
+      <button class="btn btn-pri btn-sm" id="btn-prog-save">💾 Salvar programação</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Editar célula de escala -->
+<div class="ov" id="ov-fill">
+  <div class="modal md">
+    <div class="mh">
+      <span class="mt">Editar Escala</span>
+      <button class="mx" data-close="ov-fill">✕</button>
+    </div>
+    <div class="mb">
+      <div id="fill-name" style="font-weight:600;margin-bottom:14px;color:var(--acc)"></div>
+      <div class="fg2">
+        <div class="fgg">
+          <label class="flb">Horário entrada</label>
+          <input type="text" class="fi" id="fi-hor" placeholder="08:00">
+        </div>
+        <div class="fgg">
+          <label class="flb">1ª Pausa</label>
+          <input type="text" class="fi" id="fi-p1" placeholder="09:10">
+        </div>
+        <div class="fgg">
+          <label class="flb">Almoço</label>
+          <input type="text" class="fi" id="fi-alm" placeholder="12:00">
+        </div>
+        <div class="fgg">
+          <label class="flb">2ª Pausa</label>
+          <input type="text" class="fi" id="fi-p2" placeholder="15:10">
+        </div>
+        <div class="fgg">
+          <label class="flb">Saída</label>
+          <input type="text" class="fi" id="fi-sai" placeholder="18:00">
+        </div>
+        <div class="fgg">
+          <label class="flb">Tipo</label>
+          <select class="fi" id="fi-tip">
+            <option>5X2</option>
+            <option>6X1</option>
+          </select>
+        </div>
+      </div>
+      <div class="fgg" style="margin-top:10px">
+        <label class="flb">Admissão</label>
+        <input type="date" class="fi" id="fi-adm">
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-sm" data-close="ov-fill">Cancelar</button>
+      <button class="btn btn-pri btn-sm" id="btn-fill-ok">✅ Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Notification -->
+<div id="toast">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+  <span id="toast-msg"></span>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
