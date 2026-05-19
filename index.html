@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>MOP 2026 — Mêntore Bank</title>
+  <link rel="stylesheet" href="style.css?v=30">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+<div id="app">
+
+<!-- ===== HEADER ===== -->
+<header>
+  <div class="logo">
+    <span class="logo-dot"></span>Mêntore Bank&nbsp;<span style="color:var(--tx3);font-weight:400;font-size:14px">/ MOP</span>
+  </div>
+  <div id="conn-badge" class="conn spin">🔄 Conectando Supabase...</div>
+  <div class="hact">
+    <div class="ub" id="ub"><span class="udot"></span>Sincronizando…</div>
+    <button class="btn btn-ghost btn-sm" id="btn-save-force">💾 Salvar agora</button>
+    <button class="btn btn-ghost btn-sm eo" id="btn-add">+ Novo</button>
+    <button class="btn btn-ghost btn-sm eo" id="btn-mass-add">📋 Importar CSV</button>
+    <button class="btn btn-ok btn-sm" id="btn-export">⬇ Exportar</button>
+  </div>
+</header>
+
+<!-- Barra de alerta sem escala -->
+<div class="abar" id="abar">
+  ⚠️ <span id="atxt"></span>
+  <span class="achip" id="btn-miss-alert">Ver →</span>
+</div>
+
+<!-- ===== TABS ===== -->
+<div class="tabs">
+  <button class="tab on" id="tab-mop"        data-tab="mop">MOP <span class="tbg" id="bg-mop">0</span></button>
+  <button class="tab"    id="tab-staff"       data-tab="staff">Staff <span class="tbg" id="bg-staff">0</span></button>
+  <button class="tab"    id="tab-escala"      data-tab="escala">Escala <span class="tbg" id="bg-escala">0</span> <span class="tbg w" id="bg-miss" style="display:none">0</span></button>
+  <button class="tab"    id="tab-prog"        data-tab="prog">Programar Status <span class="tbg a" id="bg-prog">0</span></button>
+  <button class="tab"    id="tab-capacidade"  data-tab="capacidade">Capacidade <span class="tbg" id="bg-cap">—</span></button>
+</div>
+
+<!-- ===== PAINEL MOP ===== -->
+<div id="pnl-mop">
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="mop-q" placeholder="Buscar nome, matrícula, e-mail…">
+    </div>
+    <div class="fg"><span class="fl">Status</span>  <select id="mop-st"  style="width:110px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Célula</span>  <select id="mop-cel" style="width:120px"><option value="">Todas</option></select></div>
+    <div class="fg"><span class="fl">Reporte</span> <select id="mop-rep" style="width:120px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Tipo</span>    <select id="mop-tip" style="width:75px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Grupo</span>   <select id="mop-grp" style="width:75px"><option value="">Todos</option></select></div>
+    <div class="spc"></div>
+  </div>
+  <div class="stats" id="mop-stats"></div>
+  <div class="tw">
+    <table><thead><tr id="mop-th"></tr></thead><tbody id="mop-tb"></tbody></table>
+  </div>
+</div>
+
+<!-- ===== PAINEL STAFF ===== -->
+<div id="pnl-staff" style="display:none">
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="staff-q" placeholder="Buscar…">
+    </div>
+    <div class="fg"><span class="fl">Status</span> <select id="staff-st"  style="width:110px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Cargo</span>  <select id="staff-car" style="width:160px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Tipo</span>   <select id="staff-tip" style="width:75px"><option value="">Todos</option></select></div>
+    <div class="spc"></div>
+  </div>
+  <div class="stats" id="staff-stats"></div>
+  <div class="tw">
+    <table><thead><tr id="staff-th"></tr></thead><tbody id="staff-tb"></tbody></table>
+  </div>
+</div>
+
+<!-- ===== PAINEL ESCALA ===== -->
+<div id="pnl-escala" style="display:none">
+  <div class="esc-hero">
+    <div>
+      <h2><span class="ico">📅</span> Controle de Escala</h2>
+      <p>Gerencie turnos, feriados e horários. Clique nos chips para editar. Dados salvos automaticamente.</p>
+    </div>
+    <div class="hact-r">
+      <button class="btn btn-ghost btn-sm eo" id="btn-scheduler-open" style="color:#2dd4bf;border-color:rgba(45,212,191,.3)">🤖 Escala Inteligente</button>
+      <button class="btn btn-ghost btn-sm eo" id="btn-bulk"           style="color:#2dd4bf;border-color:rgba(45,212,191,.3)">⚙ Troca em massa</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="esc-q" placeholder="Buscar colaborador…">
+    </div>
+    <div class="fg"><span class="fl">Mês</span>          <select id="esc-mes" style="width:130px"></select></div>
+    <div class="fg"><span class="fl">Status</span>        <select id="esc-st"  style="width:110px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Célula</span>        <select id="esc-cel" style="width:130px"><option value="">Todas</option></select></div>
+    <div class="fg"><span class="fl">Tipo</span>          <select id="esc-tip" style="width:80px"><option value="">Todos</option></select></div>
+    <div class="fg"><span class="fl">Reporte</span>       <select id="esc-rep" style="width:130px"><option value="">Todos</option></select></div>
+    <div class="fg">
+      <span class="fl">Dia da semana</span>
+      <select id="esc-dow" style="width:130px">
+        <option value="">Todos</option>
+        <option value="seg">Segunda</option><option value="ter">Terça</option>
+        <option value="qua">Quarta</option><option value="qui">Quinta</option>
+        <option value="sex">Sexta</option><option value="sáb">Sábado</option>
+        <option value="dom">Domingo</option>
+        <option value="we">Fim de semana</option>
+        <option value="wd">Dias úteis</option>
+      </select>
+    </div>
+    <div class="spc"></div>
+    <label style="font-size:11px;color:var(--tx3);display:flex;align-items:center;gap:5px;cursor:pointer;flex-shrink:0">
+      <input type="checkbox" id="show-miss" style="width:auto">Sem escala
+    </label>
+  </div>
+
+  <div class="esc-kpis" id="esc-stats"></div>
+
+  <div class="esc-legend">
+    <span class="ll">Legenda</span>
+    <span class="lchip" style="background:#fef9c3;color:#713f12;border-color:#fde047"><i style="background:#fef9c3;border:1px solid #fde047;border-radius:3px"></i>Trabalho</span>
+    <span class="lchip"><i style="background:#cbd5e1;border-radius:3px"></i>Folga</span>
+    <span class="lchip"><i style="background:#94a3b8;border-radius:3px"></i>Day Off</span>
+    <span class="lchip"><i style="background:#6ee7b7;border-radius:3px"></i>Férias</span>
+    <span class="lchip"><i style="background:rgba(248,113,113,.55);border-radius:3px"></i>Afastado</span>
+    <span class="lchip" style="background:rgba(248,113,113,.55);color:#fee2e2;border-color:rgba(248,113,113,.4)"><i style="background:rgba(248,113,113,.55);border-radius:3px"></i>Desligado</span>
+    <span class="lchip"><i style="background:#f87171;border-radius:3px"></i>Feriado</span>
+    <span class="lchip"><i style="background:#fcd34d;border-radius:3px"></i>BH</span>
+  </div>
+
+  <!-- Troca em massa -->
+  <div id="bulk-wrap" style="display:none;padding:0 20px 12px">
+    <div class="bulk-box">
+      <h3>⚙ Troca em massa de horários e status</h3>
+      <p style="font-size:11px;color:var(--tx3);margin:-4px 0 12px">Selecione líder/célula e aplique horários ou status a múltiplos colaboradores.</p>
+      <div class="bulk-g" style="grid-template-columns:repeat(2,1fr)">
+        <div class="fgg"><label class="flb">👤 Líder (Reporte)</label><select class="fi" id="bulk-rep"><option value="">— Todos os líderes —</option></select></div>
+        <div class="fgg"><label class="flb">🏷 Célula</label>         <select class="fi" id="bulk-cel"><option value="">— Todas as células —</option></select></div>
+      </div>
+      <div class="fgg" style="margin-bottom:10px;margin-top:8px">
+        <label class="flb">🧑‍🤝‍🧑 Colaboradores <span id="bk-cnt" style="color:var(--tx3);text-transform:none;font-weight:400">(nenhum — usa filtros acima)</span></label>
+        <select multiple class="fi bulk-colabs" id="bulk-colabs" size="5"></select>
+      </div>
+      <div class="bulk-g" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:8px">
+        <div class="fgg"><label class="flb">🔁 Status geral</label>
+          <select class="fi" id="bk-status">
+            <option value="">— Manter —</option>
+            <option>Ativo</option><option>Desligado</option><option>Folga</option>
+            <option>Day Off</option><option>Férias</option><option>Afastado</option><option>BH</option>
+          </select>
+        </div>
+        <div class="fgg"><label class="flb">🔹 Status Sábado</label>
+          <select class="fi" id="bk-status-sab">
+            <option value="">— Não alterar —</option>
+            <option>Folga</option><option>Day Off</option><option>BH</option><option>Ativo</option>
+          </select>
+        </div>
+        <div class="fgg"><label class="flb">🔸 Status Domingo</label>
+          <select class="fi" id="bk-status-dom">
+            <option value="">— Não alterar —</option>
+            <option>Folga</option><option>Day Off</option><option>BH</option><option>Ativo</option>
+          </select>
+        </div>
+        <!-- Campos extras de período, visíveis condicionalmente -->
+        <div class="fgg" id="bk-dem-wrap" style="display:none"><label class="flb" style="color:var(--red)">📅 Data demissão</label><input type="date" class="fi" id="bk-dem"></div>
+        <div class="fgg" id="bk-stfrom-wrap" style="display:none"><label class="flb">▶ A partir de</label><input type="date" class="fi" id="bk-stfrom"></div>
+        <div class="fgg" id="bk-stto-wrap" style="display:none">  <label class="flb">◀ Até</label>         <input type="date" class="fi" id="bk-stto"></div>
+      </div>
+      <div style="margin:8px 0 4px;font-size:11px;font-weight:600;color:var(--tx2)">🕐 Alterar horários (opcional)</div>
+      <div class="bulk-g" style="grid-template-columns:repeat(4,1fr)">
+        <div class="fgg"><label class="flb">Entrada</label> <input type="time" class="fi" id="bk-hor"></div>
+        <div class="fgg"><label class="flb">1ª Pausa</label><input type="time" class="fi" id="bk-p1"></div>
+        <div class="fgg"><label class="flb">Almoço</label>  <input type="time" class="fi" id="bk-alm"></div>
+        <div class="fgg"><label class="flb">2ª Pausa</label><input type="time" class="fi" id="bk-p2"></div>
+      </div>
+      <div class="bulk-g" style="grid-template-columns:1fr 1fr;margin-top:6px">
+        <div class="fgg"><label class="flb">📅 Horários a partir de</label><input type="date" class="fi" id="bk-hor-from"></div>
+        <div class="fgg"><label class="flb">📅 Até</label>                  <input type="date" class="fi" id="bk-hor-to"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px">
+        <button class="btn btn-sm" style="background:linear-gradient(135deg,rgba(45,212,191,.18),rgba(91,138,240,.18));color:#2dd4bf;border:1px solid rgba(45,212,191,.35);font-weight:600" id="btn-bulk-apply">✅ Aplicar até o fim do ano</button>
+        <button class="btn btn-sm" style="background:linear-gradient(135deg,rgba(91,138,240,.18),rgba(168,85,247,.18));color:#a78bfa;border:1px solid rgba(168,85,247,.35);font-weight:600" id="btn-bulk-apply-period">📅 Aplicar no período</button>
+        <button class="btn btn-ghost btn-sm" id="btn-bulk-close">Fechar</button>
+        <span id="bulk-preview" style="font-size:11px;color:var(--amb);margin-left:auto"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="esc-tip"><b>Dica:</b> Use "Escala Inteligente" para preenchimento automático ou "Troca em massa" para ajustes manuais. Clique nos chips de turno para editar um dia específico.</div>
+
+  <div class="tw" id="esc-tw">
+    <table><thead><tr id="esc-th"></tr></thead><tbody id="esc-tb"></tbody></table>
+  </div>
+</div>
+
+<!-- ===== PAINEL PROGRAMAÇÕES ===== -->
+<div id="pnl-prog" style="display:none">
+  <div class="toolbar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="prog-q" placeholder="Buscar…">
+    </div>
+    <div class="fg">
+      <span class="fl">Filtro</span>
+      <select id="prog-flt" style="width:130px">
+        <option value="">Todas</option>
+        <option value="pending">Pendentes</option>
+        <option value="active">Em vigor</option>
+        <option value="done">Concluídas</option>
+      </select>
+    </div>
+    <div class="spc"></div>
+    <button class="btn btn-pri btn-sm eo" id="btn-prog-add">+ Nova programação</button>
+  </div>
+  <div class="stats" id="prog-stats"></div>
+  <div style="padding:14px 20px">
+    <div id="prog-empty" style="display:none;text-align:center;padding:36px;color:var(--tx3)">📅 Nenhuma programação.</div>
+    <div id="prog-list"></div>
+  </div>
+</div>
+
+<!-- ===== PAINEL CAPACIDADE ===== -->
+<div id="pnl-capacidade" style="display:none">
+  <div class="toolbar">
+    <div class="fg"><span class="fl">Data</span>   <input type="date" id="cap-data" style="width:150px"></div>
+    <div class="fg"><span class="fl">Célula</span> <select id="cap-cel" style="width:140px"><option value="">Todas</option></select></div>
+    <div class="spc"></div>
+    <button class="btn btn-pri btn-sm" id="btn-cap-refresh">🔄 Atualizar</button>
+  </div>
+  <div style="padding:16px 20px 8px">
+    <div class="cap-header">
+      <h3>📊 Cobertura por hora</h3>
+      <p id="cap-subtitle" style="font-size:11px;color:var(--tx3);margin-top:3px"></p>
+    </div>
+    <div id="cap-heatmap" class="cap-heatmap"></div>
+    <div id="cap-alertas" class="cap-alertas"></div>
+  </div>
+  <div style="padding:0 20px 20px">
+    <h4 style="font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Colaboradores ativos neste dia</h4>
+    <div id="cap-cards" class="cap-cards"></div>
+  </div>
+</div>
+
+</div><!-- /#app -->
+
+<!-- ================================================================
+     MODAIS
+     ================================================================ -->
+
+<!-- Novo Colaborador / Staff -->
+<div class="ov" id="ov-add">
+  <div class="modal lg">
+    <div class="mh"><span class="mt" id="add-title">Novo Colaborador</span><button class="mx" data-close="ov-add">✕</button></div>
+    <div class="mb"><div class="fg3" id="add-grid"></div></div>
+    <div class="mf">
+      <button class="btn btn-ghost btn-sm" data-close="ov-add">Cancelar</button>
+      <button class="btn btn-pri btn-sm" id="btn-add-save">Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Importação em massa CSV -->
+<div class="ov" id="ov-mass">
+  <div class="modal lg">
+    <div class="mh"><span class="mt">📋 Importar Colaboradores (CSV)</span><button class="mx" data-close="ov-mass">✕</button></div>
+    <div class="mb">
+      <p style="margin-bottom:12px;font-size:12px;color:var(--tx2)">
+        Faça upload de um <b>.csv</b> com as colunas:<br>
+        <code style="font-size:10px;color:var(--tx3)">Matrícula, Colaborador, Status, Célula, Tipo, Reporte, Horário, Saida, Cargo, Grupo, E-mail</code>
+      </p>
+      <div class="fgg" style="margin-bottom:10px">
+        <label class="flb">Destino</label>
+        <select class="fi" id="mass-dest" style="width:160px">
+          <option value="mop">MOP</option>
+          <option value="staff">Staff</option>
+        </select>
+      </div>
+      <input type="file" id="mass-file" accept=".csv" class="fi" style="margin-bottom:10px">
+      <pre id="mass-preview" style="max-height:160px;overflow:auto;font-size:10px;color:var(--tx3);background:var(--sur2);border-radius:7px;padding:10px;white-space:pre-wrap"></pre>
+    </div>
+    <div class="mf">
+      <button class="btn btn-ghost btn-sm" data-close="ov-mass">Cancelar</button>
+      <button class="btn btn-pri btn-sm" id="btn-mass-import">Importar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Preencher Escala -->
+<div class="ov" id="ov-fill">
+  <div class="modal md">
+    <div class="mh"><span class="mt">Preencher Escala</span><button class="mx" data-close="ov-fill">✕</button></div>
+    <div class="mb">
+      <div id="fill-name" style="font-weight:600;font-size:14px;margin-bottom:14px"></div>
+      <div class="fg2">
+        <div class="fgg"><label class="flb">Horário entrada</label><input type="text" class="fi" id="fi-hor"  placeholder="08:00"></div>
+        <div class="fgg"><label class="flb">1ª Pausa</label>       <input type="text" class="fi" id="fi-p1"   placeholder="09:10"></div>
+        <div class="fgg"><label class="flb">Almoço</label>         <input type="text" class="fi" id="fi-alm"  placeholder="12:00"></div>
+        <div class="fgg"><label class="flb">2ª Pausa</label>       <input type="text" class="fi" id="fi-p2"   placeholder="15:10"></div>
+        <div class="fgg"><label class="flb">Saída</label>          <input type="text" class="fi" id="fi-sai"  placeholder="18:00"></div>
+        <div class="fgg"><label class="flb">Tipo</label>           <select class="fi" id="fi-tip"><option>5X2</option><option>6X1</option></select></div>
+      </div>
+      <div class="fgg" style="margin-top:10px"><label class="flb">Admissão</label><input type="date" class="fi" id="fi-adm"></div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-ghost btn-sm" data-close="ov-fill">Cancelar</button>
+      <button class="btn btn-pri btn-sm" id="btn-fill-ok">✅ Adicionar à Escala</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sem Escala -->
+<div class="ov" id="ov-miss">
+  <div class="modal lg">
+    <div class="mh"><span class="mt">⚠️ Sem escala</span><button class="mx" data-close="ov-miss">✕</button></div>
+    <div class="mb" id="miss-body"></div>
+    <div class="mf"><button class="btn btn-ghost btn-sm" data-close="ov-miss">Fechar</button></div>
+  </div>
+</div>
+
+<!-- Programação de Status -->
+<div class="ov" id="ov-prog">
+  <div class="modal lg">
+    <div class="mh"><span class="mt">📅 Programação de status</span><button class="mx" data-close="ov-prog">✕</button></div>
+    <div class="mb">
+      <div class="fgg" style="margin-bottom:12px">
+        <label class="flb">Colaborador</label>
+        <select class="fi" id="prog-colab"><option value="">— selecione —</option></select>
+      </div>
+      <hr style="border-color:var(--brd);margin:8px 0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+        <span style="font-size:12px;font-weight:600;color:var(--tx2)">Mudanças</span>
+        <button class="btn btn-ghost btn-sm" id="btn-sc-add">+ Adicionar</button>
+      </div>
+      <div id="sc-list"></div>
+      <div class="sc-add" id="sc-add-row">+ Outra mudança</div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-ghost btn-sm" data-close="ov-prog">Cancelar</button>
+      <button class="btn btn-pri btn-sm" id="btn-prog-save">💾 Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Escala Inteligente -->
+<div class="ov" id="ov-scheduler">
+  <div class="modal lg">
+    <div class="mh"><span class="mt">🤖 Gerar Escala Inteligente</span><button class="mx" data-close="ov-scheduler">✕</button></div>
+    <div class="mb">
+      <div class="fg2">
+        <div class="fgg">
+          <label class="flb">Tipo de escala</label>
+          <select class="fi" id="sch-tipo">
+            <option>5X2</option>
+            <option>6X1</option>
+            <option>Domingos alternados</option>
+          </select>
+        </div>
+        <div class="fgg"><label class="flb">Mês</label><select class="fi" id="sch-mes"></select></div>
+      </div>
+      <div class="fgg" style="margin-top:12px">
+        <label class="flb">Colaboradores (deixe em branco para todos)</label>
+        <select multiple class="fi" id="sch-colabs" size="6"></select>
+      </div>
+      <div id="sch-preview" style="margin-top:12px;background:var(--sur2);padding:10px;border-radius:8px;font-size:11px;color:var(--tx3)">
+        Preview aparecerá aqui após selecionar o tipo e mês…
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-ghost btn-sm" data-close="ov-scheduler">Cancelar</button>
+      <button class="btn btn-pri btn-sm" id="btn-scheduler-run">🚀 Gerar Escala</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+  <span id="toast-msg"></span>
+</div>
+
+<script src="script.js?v=30"></script>
+</body>
+</html>
