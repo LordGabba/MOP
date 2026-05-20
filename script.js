@@ -824,11 +824,22 @@ async function importarEscalasEmMassa(dados) {
   }
 
   const get = (obj, nomes) => {
-    const normalizar = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-    const mapa = Object.fromEntries(Object.keys(obj).map(k => [normalizar(k), k]));
+    const normalizar = s => String(s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim()
+      .replace(/^\ufeff/, '');
+
+    const mapa = Object.fromEntries(
+      Object.keys(obj).map(k => [normalizar(k), k])
+    );
+
     for (const nome of nomes) {
       const chave = mapa[normalizar(nome)];
-      if (chave && String(obj[chave] ?? '').trim() !== '') return String(obj[chave]).trim();
+      if (chave && String(obj[chave] ?? '').trim() !== '') {
+        return String(obj[chave]).trim();
+      }
     }
     return '';
   };
@@ -846,33 +857,41 @@ async function importarEscalasEmMassa(dados) {
     );
   };
 
-  const registros = dados.map(row => {
+  let registros = [];
+
+  dados.forEach(row => {
     const colab = buscarColaborador(row);
-    const data = normalizarData(get(row, ['data', 'Data', 'DATA']));
-    return {
+
+    const dataInicio = normalizarData(get(row, ['data', 'Data', 'DATA']));
+    const dataFim = normalizarData(get(row, ['data_fim', 'Data fim', 'Data Fim', 'DATA FIM'])) || dataInicio;
+
+    const base = {
       colaborador_id: colab?.id || null,
       colaborador_nome: colab?.nome || get(row, ['nome', 'colaborador', 'Colaborador']),
-      data,
       entrada: get(row, ['entrada', 'Entrada']),
       saida: get(row, ['saida', 'Saída', 'Saida']),
       almoco: get(row, ['almoco', 'Almoço', 'Almoco']),
       pausa1: get(row, ['pausa1', 'Pausa 1', 'Pausa1']),
       pausa2: get(row, ['pausa2', 'Pausa 2', 'Pausa2']),
-      tipo_alteracao: get(row, ['tipo', 'Tipo', 'tipo_alteracao', 'Tipo alteração']) || 'Normal',
+      tipo_alteracao: get(row, ['tipo', 'Tipo', 'tipo_alteracao', 'Tipo alteração', 'Escala']) || 'Normal',
       observacao: get(row, ['observacao', 'Observação', 'Obs']),
       status: get(row, ['status', 'Status']) || 'Normal'
     };
-  }).filter(r => r.colaborador_nome && r.data);
+
+    if (!base.colaborador_nome || !dataInicio) return;
+
+    registros.push(...gerarRegistrosEscala(base, dataInicio, dataFim, false, false));
+  });
 
   if (!registros.length) {
-    toast('Nenhuma escala válida. Confira as colunas Colaborador/Nome e Data.', 'error');
+    toast('Nenhuma escala válida. Confira Colaborador, Data e Data fim.', 'error');
     return;
   }
 
   const almocoInvalido = registros.find(r => !validarAlmocoPorEntrada(r.entrada, r.almoco).ok);
   if (almocoInvalido) {
     const validacao = validarAlmocoPorEntrada(almocoInvalido.entrada, almocoInvalido.almoco);
-    toast(`${almocoInvalido.colaborador_nome || 'Registro'} em ${formatarData(almocoInvalido.data)}: ${validacao.mensagem}`, 'error');
+    toast(`${almocoInvalido.colaborador_nome} em ${formatarData(almocoInvalido.data)}: ${validacao.mensagem}`, 'error');
     return;
   }
 
@@ -880,7 +899,6 @@ async function importarEscalasEmMassa(dados) {
   toast(`${registros.length} escala(s) importada(s) com sucesso`, 'success');
   await renderizarCalendario();
 }
-
 function proxMes() {
   APP.calendarioData.setMonth(APP.calendarioData.getMonth() + 1);
   renderizarCalendario();
