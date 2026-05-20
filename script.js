@@ -1121,8 +1121,20 @@ function parsearCSV(texto) {
 }
 
 function normalizarData(valor) {
-  const v = String(valor ?? '').trim();
-  if (!v) return null;
+  if (valor === null || valor === undefined || valor === '') return null;
+
+  // Corrige data serial do Excel, mesmo quando vem como texto: "46174"
+  if (
+    typeof valor === 'number' ||
+    /^\d{5}$/.test(String(valor).trim())
+  ) {
+    const numero = Number(String(valor).trim());
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    excelEpoch.setUTCDate(excelEpoch.getUTCDate() + numero);
+    return excelEpoch.toISOString().slice(0, 10);
+  }
+
+  const v = String(valor).trim();
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
 
@@ -1132,13 +1144,7 @@ function normalizarData(valor) {
     return `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
   }
 
-  if (typeof valor === 'number') {
-    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-    excelEpoch.setUTCDate(excelEpoch.getUTCDate() + valor);
-    return excelEpoch.toISOString().slice(0, 10);
-  }
-
-  return v;
+  return null;
 }
 
 function mostrarPreviewImportacao(dados) {
