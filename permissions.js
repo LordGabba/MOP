@@ -181,6 +181,9 @@
   }
 
   function inserirControlesEscalas() {
+    const controlesAntigos = document.getElementById('escala-view-controls');
+    if (controlesAntigos) controlesAntigos.remove();
+
     const toolbar = document.querySelector('#page-escalas .toolbar');
     if (!toolbar || document.getElementById('escala-view-controls-main')) return;
 
@@ -258,51 +261,138 @@
       escalas = escalas.filter(e => idsReporte.includes(String(e.colaborador_id)));
     }
 
-    const ordenadas = ordenarEscalasTabela(escalas);
+    const colaboradoresBase = filtrarColaboradoresTabela(APP.dados.colaboradores || [], escalas);
+    const dias = obterDiasTabela(ultimoDia);
+    const escalasPorChave = new Map(escalas.map(e => [`${String(e.colaborador_id)}|${e.data}`, e]));
+
     container.innerHTML = `
-      <div class="table-wrapper" style="grid-column:1/-1;width:100%">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Colaborador</th>
-              <th>Tipo</th>
-              <th>Entrada</th>
-              <th>Saída</th>
-              <th>Horário</th>
-              <th>Origem</th>
-              <th>Observação</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${ordenadas.length ? ordenadas.map(e => `
-              <tr>
-                <td>${formatarData(e.data)}</td>
-                <td>${escapeHtml(e.colaborador_nome || '-')}</td>
-                <td>${badgeEscala(e.tipo_alteracao || e.status || '-')}</td>
-                <td>${escapeHtml(e.entrada || '-')}</td>
-                <td>${escapeHtml(e.saida || '-')}</td>
-                <td>${escapeHtml(e.horario || '-')}</td>
-                <td>${e.origem_programacao_id ? 'Programação' : 'Escala'}</td>
-                <td class="text-sm text-muted">${escapeHtml(e.observacao || '-')}</td>
-              </tr>
-            `).join('') : '<tr><td colspan="8"><div class="empty-state"><div class="empty-title">Nenhuma escala no período</div></div></td></tr>'}
-          </tbody>
-        </table>
+      <style>
+        .escala-planner{grid-column:1/-1;width:100%;overflow:auto;background:var(--bg2);border:1px solid var(--border);border-radius:10px}
+        .escala-planner-toolbar{position:sticky;left:0;z-index:4;display:flex;justify-content:space-between;gap:14px;align-items:center;padding:14px 16px;background:var(--bg2);border-bottom:1px solid var(--border)}
+        .escala-planner-search{width:min(320px,100%);height:38px;border:1px solid var(--border);border-radius:8px;background:var(--bg1);color:var(--text1);padding:0 12px;font-size:13px}
+        .escala-planner-legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text2)}
+        .escala-planner-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+        .escala-planner-grid{display:grid;grid-template-columns:230px repeat(${dias.length},88px);min-width:${230 + dias.length * 88}px}
+        .escala-planner-head,.escala-planner-name,.escala-planner-cell{border-bottom:1px solid var(--border)}
+        .escala-planner-head{padding:12px 8px;text-align:center;color:var(--text1);font-size:14px;font-weight:700;background:var(--bg2)}
+        .escala-planner-head small{display:block;margin-top:3px;color:var(--text3);font-size:10px;font-weight:700;text-transform:uppercase}
+        .escala-planner-name{position:sticky;left:0;z-index:2;background:var(--bg2);padding:14px 12px;min-height:84px}
+        .escala-planner-name strong{display:block;color:var(--text1);font-size:13px;line-height:1.25}
+        .escala-planner-name span{display:block;color:var(--text2);font-size:12px;margin-top:5px}
+        .escala-planner-corner{position:sticky;left:0;z-index:5;text-align:left;padding-left:12px}
+        .escala-planner-cell{padding:6px;min-height:84px;background:var(--bg2)}
+        .escala-card{height:70px;border-radius:8px;border:1px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:700}
+        .escala-card .muted{font-weight:600;font-size:10px;opacity:.72}
+        .escala-card.trabalho{background:#dbeafe;border-color:#60a5fa;color:#2563eb}
+        .escala-card.ferias{background:#fef3c7;border-color:#f59e0b;color:#d97706}
+        .escala-card.dayoff{background:#ccfbf1;border-color:#14b8a6;color:#0f766e}
+        .escala-card.folga{background:#e5e7eb;border-color:#9ca3af;color:#6b7280}
+        .escala-card.treinamento{background:#f3e8ff;border-color:#a855f7;color:#9333ea}
+      </style>
+      <div class="escala-planner">
+        <div class="escala-planner-toolbar">
+          <input id="escala-table-search-main" class="escala-planner-search" type="text" placeholder="Buscar colaborador ou cargo..." value="${escapeHtml(window.__escalaBuscaTabela || '')}">
+          <div class="escala-planner-legend">
+            <span><i class="escala-planner-dot" style="background:#3b82f6"></i>Trabalho</span>
+            <span><i class="escala-planner-dot" style="background:#d97706"></i>Férias</span>
+            <span><i class="escala-planner-dot" style="background:#14b8a6"></i>Day Off</span>
+            <span><i class="escala-planner-dot" style="background:#6b7280"></i>Folga</span>
+            <span><i class="escala-planner-dot" style="background:#9333ea"></i>Treinamento</span>
+          </div>
+        </div>
+        <div class="escala-planner-grid">
+          <div class="escala-planner-head escala-planner-corner">COLABORADOR</div>
+          ${dias.map(d => `<div class="escala-planner-head">${d.dia}<small>${d.semana}</small></div>`).join('')}
+          ${colaboradoresBase.length ? colaboradoresBase.map(c => `
+            <div class="escala-planner-name">
+              <strong>${escapeHtml(c.nome || '-')}</strong>
+              <span>${escapeHtml(c.cargo || c.celula || '-')}</span>
+            </div>
+            ${dias.map(d => renderizarCelulaEscala(c, d, escalasPorChave)).join('')}
+          `).join('') : `<div style="grid-column:1/-1"><div class="empty-state"><div class="empty-title">Nenhum colaborador encontrado</div></div></div>`}
+        </div>
       </div>
     `;
+    document.getElementById('escala-table-search-main')?.addEventListener('input', e => {
+      window.__escalaBuscaTabela = e.target.value;
+      renderizarTabelaEscalas();
+    });
     window.Security?.aplicarRestricoesVisuais?.();
   }
 
-  function ordenarEscalasTabela(escalas) {
+  function filtrarColaboradoresTabela(colaboradores, escalas) {
+    const idsEscalados = new Set((escalas || []).map(e => String(e.colaborador_id)));
+    const busca = String(window.__escalaBuscaTabela || '').trim().toLowerCase();
+    const colaboradoresFiltrados = (colaboradores || [])
+      .filter(c => !APP.filtros.escalas.colaborador_id || String(c.id) === String(APP.filtros.escalas.colaborador_id))
+      .filter(c => !APP.filtros.escalas.reporte || c.reporte === APP.filtros.escalas.reporte)
+      .filter(c => idsEscalados.has(String(c.id)) || !APP.filtros.escalas.colaborador_id)
+      .filter(c => {
+        if (!busca) return true;
+        return [c.nome, c.cargo, c.celula, c.grupo].some(v => String(v || '').toLowerCase().includes(busca));
+      });
+
     const ordenacao = window.__escalaOrdenacaoAtual || 'data_asc';
-    return [...(escalas || [])].sort((a, b) => {
-      const dataCmp = String(a.data || '').localeCompare(String(b.data || ''));
-      const nomeCmp = String(a.colaborador_nome || '').localeCompare(String(b.colaborador_nome || ''), 'pt-BR');
-      if (ordenacao === 'data_desc') return -dataCmp || nomeCmp;
-      if (ordenacao === 'nome_asc') return nomeCmp || dataCmp;
-      if (ordenacao === 'nome_desc') return -nomeCmp || dataCmp;
-      return dataCmp || nomeCmp;
+    return colaboradoresFiltrados.sort((a, b) => {
+      const nomeCmp = String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+      return ordenacao === 'nome_desc' ? -nomeCmp : nomeCmp;
     });
+  }
+
+  function obterDiasTabela(ultimoDia) {
+    const ano = APP.calendarioData.getFullYear();
+    const mes = APP.calendarioData.getMonth();
+    const dias = Array.from({ length: ultimoDia }, (_, i) => {
+      const dia = i + 1;
+      const data = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+      const semana = new Date(ano, mes, dia).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').slice(0, 3).toUpperCase();
+      return { dia, data, semana };
+    });
+    return window.__escalaOrdenacaoAtual === 'data_desc' ? dias.reverse() : dias;
+  }
+
+  function renderizarCelulaEscala(colaborador, dia, escalasPorChave) {
+    const escala = escalasPorChave.get(`${String(colaborador.id)}|${dia.data}`);
+    const estado = estadoCelulaEscala(escala, dia.data);
+    return `
+      <div class="escala-planner-cell">
+        <div class="escala-card ${estado.classe}" title="${escapeHtml(estado.titulo)}">
+          <span>${estado.sigla}</span>
+          <span class="muted">${escapeHtml(estado.horario)}</span>
+          <span class="muted">${escapeHtml(estado.carga)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function estadoCelulaEscala(escala, data) {
+    const tipo = String(escala?.tipo_alteracao || escala?.status || '').trim();
+    if (/férias|ferias/i.test(tipo)) return montarEstadoEscala('ferias', 'F', escala, 'Férias');
+    if (/day off/i.test(tipo)) return montarEstadoEscala('dayoff', 'D', escala, 'Day Off');
+    if (/folga/i.test(tipo)) return montarEstadoEscala('folga', 'F', escala, 'Folga');
+    if (/treinamento/i.test(tipo)) return montarEstadoEscala('treinamento', 'TR', escala, 'Treinamento');
+    if (escala) return montarEstadoEscala('trabalho', 'T', escala, 'Trabalho');
+
+    const diaSemana = new Date(`${data}T00:00:00`).getDay();
+    return {
+      classe: diaSemana === 0 || diaSemana === 6 ? 'folga' : 'trabalho',
+      sigla: diaSemana === 0 || diaSemana === 6 ? 'F' : 'T',
+      horario: diaSemana === 0 || diaSemana === 6 ? '-' : '08:00',
+      carga: diaSemana === 0 || diaSemana === 6 ? '-' : '8h',
+      titulo: diaSemana === 0 || diaSemana === 6 ? 'Folga' : 'Trabalho'
+    };
+  }
+
+  function montarEstadoEscala(classe, sigla, escala, titulo) {
+    const entrada = escala?.entrada || escala?.horario || '';
+    const saida = escala?.saida || '';
+    const horario = entrada && saida ? `${entrada} ${saida}` : (entrada || '-');
+    return {
+      classe,
+      sigla,
+      horario,
+      carga: escala?.hora_extra ? `${escala.hora_extra}h` : '8h',
+      titulo
+    };
   }
 })();
