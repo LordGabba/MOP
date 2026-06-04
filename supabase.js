@@ -3,7 +3,7 @@
 // ============================================================
 
 const SUPABASE_URL = 'https://pjeehaziodnxuakhacmc.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBqZWVoYXppb2RueHVha2hhY21jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMjU1MzQsImV4cCI6MjA5NDcwMTUzNH0.h5mIzDOvVS3M8BDFy3TeLM4djdBFHTM72LOpKGNgLkg';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJwamVlaGF6aW9kbnh1YWtoYWNtYyIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzc5MTI1NTM0LCJleHAiOjIwOTQ3MDE1MzR9.h5mIzDOvVS3M8BDFy3TeLM4djdBFHTM72LOpKGNgLkg';
 
 // Inicializa o cliente Supabase
 const { createClient } = supabase;
@@ -92,7 +92,7 @@ const DB = {
     async importarLote(lista) {
       if (!permissaoLiberada('importar_dados')) return [];
       const payload = deduplicarPorCampos(
-        lista.map(d => calcularCamposAuto(d)),
+        lista.map(d => limparChavesConflito(calcularCamposAuto(d), ['matricula'])),
         ['matricula']
       );
       const { data, error } = await db.from('colaboradores').upsert(payload, { onConflict: 'matricula' }).select();
@@ -381,6 +381,18 @@ function deduplicarPorCampos(registros, campos) {
   });
 
   return [...semChave, ...porChave.values()];
+}
+
+function limparChavesConflito(registro, campos) {
+  const limpo = { ...registro };
+  campos.forEach(campo => {
+    if (String(limpo[campo] ?? '').trim() === '') {
+      limpo[campo] = null;
+    } else if (typeof limpo[campo] === 'string') {
+      limpo[campo] = limpo[campo].trim();
+    }
+  });
+  return limpo;
 }
 
 async function registrarAuditoria(tabela, operacao, registroId, dadosAnteriores, dadosNovos) {
