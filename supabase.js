@@ -91,7 +91,10 @@ const DB = {
     },
     async importarLote(lista) {
       if (!permissaoLiberada('importar_dados')) return [];
-      const payload = lista.map(d => calcularCamposAuto(d));
+      const payload = deduplicarPorCampos(
+        lista.map(d => calcularCamposAuto(d)),
+        ['matricula']
+      );
       const { data, error } = await db.from('colaboradores').upsert(payload, { onConflict: 'matricula' }).select();
       if (error) throw error;
       return data;
@@ -201,11 +204,11 @@ const DB = {
     },
     async importarLote(registros) {
       if (!permissaoLiberada('importar_escala')) return [];
-      const limpos = (registros || []).map(r => ({
+      const limpos = deduplicarPorCampos((registros || []).map(r => ({
         ...r,
         colaborador_id: r.colaborador_id || null,
         hora_extra: r.hora_extra === '' ? null : r.hora_extra
-      }));
+      })), ['colaborador_id', 'data']);
 
       const { data, error } = await db
         .from('escalas')
@@ -362,6 +365,22 @@ function calcularCamposAuto(dados) {
     d.tempo_meses = Math.max(0, meses);
   }
   return d;
+}
+
+function deduplicarPorCampos(registros, campos) {
+  const semChave = [];
+  const porChave = new Map();
+
+  (registros || []).forEach(registro => {
+    const partes = campos.map(campo => String(registro?.[campo] ?? '').trim().toLowerCase());
+    if (partes.some(parte => !parte)) {
+      semChave.push(registro);
+      return;
+    }
+    porChave.set(partes.join('|'), registro);
+  });
+
+  return [...semChave, ...porChave.values()];
 }
 
 async function registrarAuditoria(tabela, operacao, registroId, dadosAnteriores, dadosNovos) {
