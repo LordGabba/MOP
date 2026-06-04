@@ -429,3 +429,61 @@ async function registrarAuditoria(tabela, operacao, registroId, dadosAnteriores,
 // Exporta globalmente
 window.DB = DB;
 window.db = db;
+
+document.addEventListener('DOMContentLoaded', () => {
+  window.confirmarImportacao = async function confirmarImportacaoComReporte(dados) {
+    if (!Security.requirePermission('importar_dados')) return;
+    if (!dados?.length) return;
+    const destino = document.getElementById('import-destino')?.value || 'colaboradores';
+    toast(`Importando ${dados.length} registros...`, 'info');
+
+    try {
+      const mapeados = dados.map(d => {
+        const lider = d.supervisor || d.Supervisor || d.SUPERVISOR ||
+          d.reporte || d.Reporte || d.REPORTE ||
+          d.lider || d.Lider || d.Líder || d.LIDER || '';
+
+        return {
+          nome: d.nome || d.Colaborador || d.COLABORADOR || d.Nome || '',
+          matricula: d.matricula || d.Matrícula || d.MATRICULA || '',
+          email: d.email || d.Email || d.EMAIL || '',
+          celula: d.celula || d.Célula || d.CELULA || '',
+          status: d.status || d.Status || 'Ativo',
+          cargo: d.cargo || d.Cargo || '',
+          cpf: d.cpf || d.CPF || '',
+          filial: d.filial || d.Filial || '',
+          grupo: d.grupo || d.Grupo || '',
+          horario: d.horario || d.Horário || d.Horario || '',
+          supervisor: lider,
+          reporte: lider,
+        };
+      }).filter(d => d.nome);
+
+      if (destino === 'colaboradores') {
+        await DB.colaboradores.importarLote(mapeados);
+      } else if (destino === 'staff') {
+        const staffPayload = deduplicarPorCampos(
+          mapeados.map(d => limparChavesConflito(calcularCamposAuto(d), ['matricula'])),
+          ['matricula']
+        );
+        const comMatricula = staffPayload.filter(d => d.matricula);
+        const semMatricula = staffPayload.filter(d => !d.matricula);
+
+        if (comMatricula.length) {
+          const { error } = await db.from('staff').upsert(comMatricula, { onConflict: 'matricula' });
+          if (error) throw error;
+        }
+        if (semMatricula.length) {
+          const { error } = await db.from('staff').insert(semMatricula);
+          if (error) throw error;
+        }
+      }
+
+      toast(`${mapeados.length} registros importados com sucesso!`, 'success');
+      document.getElementById('import-preview').innerHTML = '';
+      window._dadosImport = null;
+    } catch (e) {
+      toast('Erro na importação: ' + e.message, 'error');
+    }
+  };
+});
