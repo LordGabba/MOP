@@ -454,6 +454,12 @@ document.addEventListener('DOMContentLoaded', () => {
           filial: d.filial || d.Filial || '',
           grupo: d.grupo || d.Grupo || '',
           horario: d.horario || d.Horário || d.Horario || '',
+          escala: d.escala || d.Escala || d.ESCALA || '',
+          admissao: normalizarDataImportacao(
+            d.admissao || d.Admissão || d.Admissao || d.ADMISSAO ||
+            d['Data de Admissão'] || d['Data Admissão'] ||
+            d['Data de Admissao'] || d['Data Admissao'] || ''
+          ),
           supervisor: lider,
           reporte: lider,
         };
@@ -487,3 +493,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 });
+
+function normalizarDataImportacao(valor) {
+  if (valor === null || valor === undefined || valor === '') return null;
+
+  if (typeof valor === 'number' || /^\d{5}$/.test(String(valor).trim())) {
+    const numero = Number(String(valor).trim());
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    excelEpoch.setUTCDate(excelEpoch.getUTCDate() + numero);
+    return excelEpoch.toISOString().slice(0, 10);
+  }
+
+  const v = String(valor).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+
+  const br = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (br) {
+    const [, dia, mes, ano] = br;
+    return `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+  }
+
+  return null;
+}
