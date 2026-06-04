@@ -189,7 +189,9 @@ const DB = {
       const { data, error } = await query;
       if (error) throw error;
       const programadas = await listarEscalasProgramadas(filtros);
-      return [...(data || []), ...programadas];
+      const chavesProgramadas = new Set(programadas.map(e => chaveEscalaColaboradorData(e)));
+      const escalasSemConflito = (data || []).filter(e => !chavesProgramadas.has(chaveEscalaColaboradorData(e)));
+      return [...escalasSemConflito, ...programadas];
     },
     async criar(dados) {
       if (!permissaoLiberada('cadastrar_escala')) return null;
@@ -551,6 +553,10 @@ function corProgramacao(tipo) {
   return mapa[String(tipo || '').trim()] || '#6b7280';
 }
 
+function chaveEscalaColaboradorData(escala) {
+  return `${String(escala?.colaborador_id || '')}|${String(escala?.data || '')}`;
+}
+
 async function registrarAuditoria(tabela, operacao, registroId, dadosAnteriores, dadosNovos) {
   try {
     const usuarioAtual = window.Permissions?.estado?.user;
@@ -573,6 +579,8 @@ window.DB = DB;
 window.db = db;
 
 document.addEventListener('DOMContentLoaded', () => {
+  configurarVisualizacoesEscalas();
+
   if (typeof window.renderizarTabelaColaboradores === 'function' && !window.renderizarTabelaColaboradores.__tempoCasaFormatado) {
     const renderOriginal = window.renderizarTabelaColaboradores;
     window.renderizarTabelaColaboradores = function renderizarTabelaColaboradoresComTempoCasa() {
@@ -644,6 +652,140 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 });
+
+function configurarVisualizacoesEscalas() {
+  if (window.__escalasVisualizacaoConfigurada) return;
+  window.__escalasVisualizacaoConfigurada = true;
+  window.__escalaVisualizacao = 'calendario';
+  window.__escalaOrdenacao = 'data_asc';
+
+  setTimeout(() => {
+    const grid = document.getElementById('calendario-grid');
+    const card = grid?.closest('.card');
+    const header = card?.querySelector('.card-header');
+    if (!grid || !header || document.getElementById('escala-view-controls')) return;
+
+    const controls = document.createElement('div');
+    controls.id = 'escala-view-controls';
+    controls.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+    controls.innerHTML = `
+      <div class="table-actions" style="gap:4px">
+        <button id="btn-view-calendario" class="btn btn-secondary btn-sm active" type="button">Calendário</button>
+        <button id="btn-view-tabela" class="btn btn-secondary btn-sm" type="button">Tabela</button>
+      </div>
+      <select id="escala-sort-select" class="filter-select" style="height:32px;min-width:180px;display:none">
+        <option value="data_asc">Data: menor para maior</option>
+        <option value="data_desc">Data: maior para menor</option>
+        <option value="nome_asc">Colaborador: A-Z</option>
+        <option value="nome_desc">Colaborador: Z-A</option>
+      </select>
+    `;
+    header.appendChild(controls);
+
+    document.getElementById('btn-view-calendario')?.addEventListener('click', () => trocarVisualizacaoEscalas('calendario'));
+    document.getElementById('btn-view-tabela')?.addEventListener('click', () => trocarVisualizacaoEscalas('tabela'));
+    document.getElementById('escala-sort-select')?.addEventListener('change', e => {
+      window.__escalaOrdenacao = e.target.value;
+      if (window.__escalaVisualizacao === 'tabela') renderizarTabelaEscalasPlanejamento();
+    });
+  }, 700);
+
+  if (typeof window.renderizarCalendario === 'function' && !window.renderizarCalendario.__visualizacaoEscalas) {
+    const renderCalendarioOriginal = window.renderizarCalendario;
+    window.renderizarCalendario = async function renderizarCalendarioComVisualizacao() {
+      if (window.__escalaVisualizacao === 'tabela') {
+        await renderizarTabelaEscalasPlanejamento();
+        return;
+      }
+      await renderCalendarioOriginal();
+    };
+    window.renderizarCalendario.__visualizacaoEscalas = true;
+  }
+}
+
+function trocarVisualizacaoEscalas(visualizacao) {
+  window.__escalaVisualizacao = visualizacao;
+  document.getElementById('btn-view-calendario')?.classList.toggle('active', visualizacao === 'calendario');
+  document.getElementById('btn-view-tabela')?.classList.toggle('active', visualizacao === 'tabela');
+  const sort = document.getElementById('escala-sort-select');
+  if (sort) sort.style.display = visualizacao === 'tabela' ? '' : 'none';
+  renderizarCalendario();
+}
+
+async function renderizarTabelaEscalasPlanejamento() {
+  const container = document.getElementById('calendario-grid');
+  if (!container) return;
+
+  const ano = APP.calendarioData.getFullYear();
+  const mes = APP.calendarioData.getMonth();
+  const label = document.getElementById('calendario-mes-label');
+  if (label) {
+    label.textContent = new Date(ano, mes, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  }
+
+  const ultimoDia = new Date(ano, mes + 1, 0).getDate();
+  const dataInicio = `${ano}-${String(mes + 1).padStart(2, '0')}-01`;
+  const dataFim = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+  let escalas = await DB.escalas.listar({
+    data_inicio: dataInicio,
+    data_fim: dataFim,
+    colaborador_id: APP.filtros.escalas.colaborador_id || ''
+  });
+
+  if (APP.filtros.escalas.reporte) {
+    const idsReporte = (APP.dados.colaboradores || [])
+      .filter(c => c.reporte === APP.filtros.escalas.reporte)
+      .map(c => String(c.id));
+    escalas = escalas.filter(e => idsReporte.includes(String(e.colaborador_id)));
+  }
+
+  escalas = ordenarEscalasTabela(escalas);
+  container.innerHTML = `
+    <div class="table-wrapper" style="grid-column:1/-1;width:100%">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Colaborador</th>
+            <th>Tipo</th>
+            <th>Entrada</th>
+            <th>Saída</th>
+            <th>Horário</th>
+            <th>Origem</th>
+            <th>Observação</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${escalas.length ? escalas.map(e => `
+            <tr>
+              <td>${formatarData(e.data)}</td>
+              <td>${escapeHtml(e.colaborador_nome || '-')}</td>
+              <td>${badgeEscala(e.tipo_alteracao || e.status || '-')}</td>
+              <td>${escapeHtml(e.entrada || '-')}</td>
+              <td>${escapeHtml(e.saida || '-')}</td>
+              <td>${escapeHtml(e.horario || '-')}</td>
+              <td>${e.origem_programacao_id ? 'Programação' : 'Escala'}</td>
+              <td class="text-sm text-muted">${escapeHtml(e.observacao || '-')}</td>
+            </tr>
+          `).join('') : '<tr><td colspan="8"><div class="empty-state"><div class="empty-title">Nenhuma escala no período</div></div></td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+  Security.aplicarRestricoesVisuais();
+}
+
+function ordenarEscalasTabela(escalas) {
+  const ordenacao = window.__escalaOrdenacao || 'data_asc';
+  return [...(escalas || [])].sort((a, b) => {
+    const dataCmp = String(a.data || '').localeCompare(String(b.data || ''));
+    const nomeCmp = String(a.colaborador_nome || '').localeCompare(String(b.colaborador_nome || ''), 'pt-BR');
+    if (ordenacao === 'data_desc') return -dataCmp || nomeCmp;
+    if (ordenacao === 'nome_asc') return nomeCmp || dataCmp;
+    if (ordenacao === 'nome_desc') return -nomeCmp || dataCmp;
+    return dataCmp || nomeCmp;
+  });
+}
 
 function formatarTempoCasaNaTabela() {
   const tbody = document.getElementById('tabela-colaboradores');
