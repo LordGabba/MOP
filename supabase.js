@@ -44,6 +44,7 @@ const DB = {
   colaboradores: {
     async listar(filtros = {}) {
       if (!permissaoLiberada(agenteLogado() ? 'visualizar_propria_escala' : 'visualizar_colaboradores')) return [];
+      await aplicarProgramacoesVigentes();
       let query = db.from('colaboradores').select('*').order('nome');
       if (agenteLogado()) query = query.ilike('email', emailLogado());
       if (filtros.status) query = query.eq('status', filtros.status);
@@ -187,7 +188,8 @@ const DB = {
       if (filtros.tipo) query = query.eq('tipo_alteracao', filtros.tipo);
       const { data, error } = await query;
       if (error) throw error;
-      return data || [];
+      const programadas = await listarEscalasProgramadas(filtros);
+      return [...(data || []), ...programadas];
     },
     async criar(dados) {
       if (!permissaoLiberada('cadastrar_escala')) return null;
@@ -375,7 +377,8 @@ function calcularCamposAuto(dados) {
   if (d.admissao) {
     const adm = new Date(d.admissao);
     const hoje = new Date();
-    const meses = (hoje.getFullYear() - adm.getFullYear()) * 12 + (hoje.getMonth() - adm.getMonth());
+    let meses = (hoje.getFullYear() - adm.getFullYear()) * 12 + (hoje.getMonth() - adm.getMonth());
+    if (hoje.getDate() < adm.getDate()) meses -= 1;
     d.tempo_meses = Math.max(0, meses);
   }
   return d;
@@ -409,6 +412,145 @@ function limparChavesConflito(registro, campos) {
   return limpo;
 }
 
+let sincronizandoProgramacoes = false;
+
+async function aplicarProgramacoesVigentes() {
+  if (sincronizandoProgramacoes) return;
+  sincronizandoProgramacoes = true;
+  try {
+    const hoje = dataHojeLocal();
+    const { data, error } = await db
+      .from('programacoes')
+      .select('*')
+      .lte('data_inicio', hoje);
+    if (error) throw error;
+
+    const vigentes = (data || []).filter(p => programacaoAplicavel(p) && programacaoVigente(p, hoje));
+    for (const p of vigentes) {
+      if (!p.colaborador_id) continue;
+      const status = statusPorProgramacao(p.tipo);
+      const payload = {
+        status,
+        escala: p.tipo || status,
+      };
+      if (status === 'Férias') {
+        payload.primeiro_dia_ferias = p.data_inicio;
+        payload.ultimo_dia_ferias = p.data_fim || p.data_inicio;
+      }
+
+      await db.from('colaboradores').update(payload).eq('id', p.colaborador_id);
+    }
+  } catch (e) {
+    console.warn('Sincronização de programações falhou:', e.message);
+  } finally {
+    sincronizandoProgramacoes = false;
+  }
+}
+
+async function listarEscalasProgramadas(filtros = {}) {
+  const inicio = filtros.data_inicio || dataHojeLocal();
+  const fim = filtros.data_fim || inicio;
+  const { data, error } = await db
+    .from('programacoes')
+    .select('*')
+    .lte('data_inicio', fim);
+  if (error) return [];
+
+  return (data || [])
+    .filter(p => programacaoAplicavel(p) && programacaoCruzaPeriodo(p, inicio, fim))
+    .filter(p => !filtros.colaborador_id || String(p.colaborador_id) === String(filtros.colaborador_id))
+    .flatMap(p => datasDaProgramacao(p, inicio, fim).map(data => ({
+      id: -Number(p.id || 0),
+      colaborador_id: p.colaborador_id,
+      colaborador_nome: p.colaborador_nome,
+      data,
+      horario: '',
+      entrada: '',
+      saida: '',
+      tipo_alteracao: p.tipo,
+      observacao: p.motivo || p.observacao || 'Programação planejada',
+      status: statusPorProgramacao(p.tipo),
+      cor: corProgramacao(p.tipo),
+      origem_programacao_id: p.id,
+    })));
+}
+
+function dataHojeLocal() {
+  const hoje = new Date();
+  const ano = hoje.getFullYear();
+  const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+  const dia = String(hoje.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
+}
+
+function programacaoVigente(programacao, data) {
+  return programacaoCruzaPeriodo(programacao, data, data);
+}
+
+function programacaoCruzaPeriodo(programacao, inicio, fim) {
+  if (!programacao?.data_inicio) return false;
+  const progInicio = programacao.data_inicio;
+  const progFim = programacao.data_fim || programacao.data_inicio;
+  return progInicio <= fim && progFim >= inicio;
+}
+
+function programacaoAplicavel(programacao) {
+  return !['Rejeitado', 'Cancelado'].includes(String(programacao?.status || '').trim());
+}
+
+function datasDaProgramacao(programacao, inicio, fim) {
+  const datas = [];
+  const primeiro = maiorData(programacao.data_inicio, inicio);
+  const ultimo = menorData(programacao.data_fim || programacao.data_inicio, fim);
+  const cursor = new Date(`${primeiro}T00:00:00`);
+  const limite = new Date(`${ultimo}T00:00:00`);
+
+  while (cursor <= limite) {
+    datas.push(cursor.toISOString().slice(0, 10));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return datas;
+}
+
+function maiorData(a, b) {
+  return a > b ? a : b;
+}
+
+function menorData(a, b) {
+  return a < b ? a : b;
+}
+
+function statusPorProgramacao(tipo) {
+  const normalizado = String(tipo || '').trim();
+  const mapa = {
+    'Férias': 'Férias',
+    'Ferias': 'Férias',
+    'Day Off': 'Day Off',
+    'Folga': 'Day Off',
+    'Treinamento': 'Treinamento',
+    'Home Office': 'Ativo',
+    'Licença': 'Afastado',
+    'Licenca': 'Afastado',
+    'Ausência': 'Afastado',
+    'Ausencia': 'Afastado',
+  };
+  return mapa[normalizado] || normalizado || 'Ativo';
+}
+
+function corProgramacao(tipo) {
+  const mapa = {
+    'Férias': '#f59e0b',
+    'Ferias': '#f59e0b',
+    'Day Off': '#3b82f6',
+    'Folga': '#10b981',
+    'Treinamento': '#6366f1',
+    'Home Office': '#8b5cf6',
+    'Licença': '#ef4444',
+    'Licenca': '#ef4444',
+  };
+  return mapa[String(tipo || '').trim()] || '#6b7280';
+}
+
 async function registrarAuditoria(tabela, operacao, registroId, dadosAnteriores, dadosNovos) {
   try {
     const usuarioAtual = window.Permissions?.estado?.user;
@@ -431,6 +573,15 @@ window.DB = DB;
 window.db = db;
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (typeof window.renderizarTabelaColaboradores === 'function' && !window.renderizarTabelaColaboradores.__tempoCasaFormatado) {
+    const renderOriginal = window.renderizarTabelaColaboradores;
+    window.renderizarTabelaColaboradores = function renderizarTabelaColaboradoresComTempoCasa() {
+      renderOriginal();
+      formatarTempoCasaNaTabela();
+    };
+    window.renderizarTabelaColaboradores.__tempoCasaFormatado = true;
+  }
+
   window.confirmarImportacao = async function confirmarImportacaoComReporte(dados) {
     if (!Security.requirePermission('importar_dados')) return;
     if (!dados?.length) return;
@@ -493,6 +644,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 });
+
+function formatarTempoCasaNaTabela() {
+  const tbody = document.getElementById('tabela-colaboradores');
+  if (!tbody) return;
+
+  [...tbody.querySelectorAll('tr')].forEach(tr => {
+    if (!tr.cells || tr.cells.length < 12) return;
+    const texto = String(tr.cells[11].textContent || '').trim();
+    const match = texto.match(/^(\d+)\s*m$/i);
+    if (!match) return;
+    tr.cells[11].textContent = formatarTempoCasa(Number(match[1]));
+  });
+}
+
+function formatarTempoCasa(tempoMeses) {
+  if (tempoMeses === null || tempoMeses === undefined || tempoMeses === '') return '-';
+  const totalMeses = Math.max(0, Number(tempoMeses) || 0);
+  const anos = Math.floor(totalMeses / 12);
+  const meses = totalMeses % 12;
+
+  if (!anos) return `${meses} ${meses === 1 ? 'mês' : 'meses'}`;
+  if (!meses) return `${anos} ${anos === 1 ? 'ano' : 'anos'}`;
+  return `${anos} ${anos === 1 ? 'ano' : 'anos'} e ${meses} ${meses === 1 ? 'mês' : 'meses'}`;
+}
 
 function normalizarDataImportacao(valor) {
   if (valor === null || valor === undefined || valor === '') return null;
