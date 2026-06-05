@@ -1,8 +1,14 @@
 (function () {
-  document.addEventListener('DOMContentLoaded', () => {
+  function agendarRelatorioMOP() {
     setTimeout(instalarRelatorioMOP, 1200);
     document.addEventListener('auth:ready', () => setTimeout(instalarRelatorioMOP, 400));
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', agendarRelatorioMOP);
+  } else {
+    agendarRelatorioMOP();
+  }
 
   function instalarRelatorioMOP() {
     if (window.__relatorioMOPPatch) return;
