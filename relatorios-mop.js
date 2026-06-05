@@ -1,357 +1,226 @@
 (function () {
-  function agendarRelatorioMOP() {
-    setTimeout(instalarRelatorioMOP, 1200);
-    document.addEventListener('auth:ready', () => setTimeout(instalarRelatorioMOP, 400));
+  function agendarExportadorMOP() {
+    setTimeout(instalarExportadorMOP, 500);
+    document.addEventListener('auth:ready', () => setTimeout(instalarExportadorMOP, 400));
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', agendarRelatorioMOP);
+    document.addEventListener('DOMContentLoaded', agendarExportadorMOP);
   } else {
-    agendarRelatorioMOP();
+    agendarExportadorMOP();
   }
 
-  function instalarRelatorioMOP() {
-    if (window.__relatorioMOPPatch) return;
-    if (typeof window.DB === 'undefined') {
-      setTimeout(instalarRelatorioMOP, 500);
+  function instalarExportadorMOP() {
+    if (window.__colaboradoresMOPExportPatch) return;
+    if (typeof window.gerarRelatorio !== 'function' || typeof window.DB === 'undefined' || typeof window.XLSX === 'undefined') {
+      setTimeout(instalarExportadorMOP, 500);
       return;
     }
 
-    window.__relatorioMOPPatch = true;
+    window.__colaboradoresMOPExportPatch = true;
     const gerarRelatorioOriginal = window.gerarRelatorio;
+    const carregarRelatoriosOriginal = window.carregarRelatorios;
 
-    window.carregarRelatorios = carregarRelatorioMOP;
-    window.gerarRelatorioMOP = exportarRelatorioMOP;
-    window.gerarRelatorioCompleto = () => exportarRelatorioMOP('xlsx');
-    window.gerarRelatorio = async function gerarRelatorioCompat(tipo) {
-      if (!tipo || tipo === 'mop' || tipo === 'colaboradores') return exportarRelatorioMOP('csv');
-      if (typeof gerarRelatorioOriginal === 'function') return gerarRelatorioOriginal(tipo);
-      return exportarRelatorioMOP('csv');
+    window.gerarRelatorio = async function gerarRelatorioComMOP(tipo) {
+      if (tipo === 'colaboradores') return gerarRelatorioColaboradoresMOP();
+      return gerarRelatorioOriginal.apply(this, arguments);
     };
 
-    const page = document.getElementById('page-relatorios');
-    if (page?.classList.contains('active')) carregarRelatorioMOP();
+    window.carregarRelatorios = async function carregarRelatoriosComBotaoMOP() {
+      const retorno = await carregarRelatoriosOriginal.apply(this, arguments);
+      ajustarBotaoRelatorioColaboradores();
+      return retorno;
+    };
+
+    ajustarBotaoRelatorioColaboradores();
   }
 
-  async function carregarRelatorioMOP() {
-    const page = document.getElementById('page-relatorios');
-    if (!page) return;
-
-    page.innerHTML = `
-      <div class="page-header">
-        <div>
-          <div class="page-title">Relatórios</div>
-          <div class="page-subtitle">Planilha MOP operacional</div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-secondary btn-sm" type="button" onclick="gerarRelatorioMOP('csv')">CSV</button>
-          <button class="btn btn-primary btn-sm" type="button" onclick="gerarRelatorioMOP('xlsx')">Excel</button>
-        </div>
-      </div>
-
-      <style>
-        .mop-report{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden}
-        .mop-report-summary{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:1px;background:var(--border)}
-        .mop-report-kpi{background:var(--card);padding:14px 16px}
-        .mop-report-kpi span{display:block;color:var(--text2);font-size:11px;text-transform:uppercase;font-weight:700;margin-bottom:6px}
-        .mop-report-kpi strong{font-size:22px;color:var(--text1)}
-        .mop-report-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px 16px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg2)}
-        .mop-report-search{flex:1;min-width:240px;height:38px;border:1px solid var(--border);border-radius:8px;background:var(--bg1);color:var(--text1);padding:0 12px;font-size:13px}
-        .mop-report-table-wrap{overflow:auto;max-height:calc(100vh - 300px)}
-        .mop-report-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1500px}
-        .mop-report-table th{position:sticky;top:0;z-index:2;background:var(--bg2);color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:0;font-weight:700;text-align:left;padding:12px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
-        .mop-report-table td{padding:11px 10px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text1);vertical-align:middle;white-space:nowrap}
-        .mop-report-table tbody tr:hover td{background:rgba(59,130,246,.08)}
-        .mop-report-name{font-weight:700;color:var(--text1)}
-        .mop-report-muted{color:var(--text2)}
-        .mop-report-status{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-size:11px;font-weight:700;background:rgba(34,197,94,.12);color:#22c55e}
-        .mop-report-status.ferias{background:rgba(245,158,11,.14);color:#f59e0b}
-        .mop-report-status.inativo{background:rgba(148,163,184,.16);color:#94a3b8}
-        @media(max-width:900px){.mop-report-summary{grid-template-columns:repeat(2,minmax(120px,1fr))}.mop-report-table-wrap{max-height:none}}
-      </style>
-
-      <div class="mop-report">
-        <div id="mop-report-summary" class="mop-report-summary">
-          <div class="mop-report-kpi"><span>Total</span><strong>-</strong></div>
-          <div class="mop-report-kpi"><span>Ativos</span><strong>-</strong></div>
-          <div class="mop-report-kpi"><span>Férias</span><strong>-</strong></div>
-          <div class="mop-report-kpi"><span>Programações</span><strong>-</strong></div>
-        </div>
-        <div class="mop-report-toolbar">
-          <input id="mop-report-search" class="mop-report-search" type="text" placeholder="Buscar matrícula, colaborador, cargo ou supervisor...">
-          <select id="mop-report-status" class="filter-select" style="height:38px;min-width:150px"><option value="">Todos status</option></select>
-          <select id="mop-report-supervisor" class="filter-select" style="height:38px;min-width:180px"><option value="">Todos supervisores</option></select>
-        </div>
-        <div class="mop-report-table-wrap">
-          <table class="mop-report-table">
-            <thead>
-              <tr>
-                <th>Matrícula</th>
-                <th>Colaborador</th>
-                <th>Célula</th>
-                <th>Grupo</th>
-                <th>Cargo</th>
-                <th>Horário</th>
-                <th>Escala</th>
-                <th>Filial</th>
-                <th>Supervisor</th>
-                <th>Admissão</th>
-                <th>Tempo</th>
-                <th>Status</th>
-                <th>Férias</th>
-                <th>Programação</th>
-                <th>Última escala</th>
-              </tr>
-            </thead>
-            <tbody id="mop-report-body">
-              <tr><td colspan="15"><div class="loading-inline"><div class="spinner"></div> Carregando...</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
+  async function gerarRelatorioColaboradoresMOP() {
+    if (window.Security && !Security.requirePermission('exportar_relatorios')) return;
+    window.toast?.('Gerando planilha MOP...', 'info');
 
     try {
-      const [colaboradores, staff, programacoes, escalas] = await Promise.all([
-        DB.colaboradores.listar().catch(() => []),
-        DB.staff.listar().catch(() => []),
-        DB.programacoes.listar().catch(() => []),
-        DB.escalas.listar().catch(() => [])
-      ]);
+      const dados = await DB.colaboradores.listar();
+      if (!dados.length) {
+        window.toast?.('Sem dados para exportar', 'warning');
+        return;
+      }
 
-      window.__relatorioMOP = {
-        linhas: montarLinhasRelatorioMOP(colaboradores, staff, programacoes, escalas),
-        filtros: window.__relatorioMOP?.filtros || { busca: '', status: '', supervisor: '' }
-      };
+      const xlsx = await obterBibliotecaXLSXMOP();
+      const workbook = xlsx.utils.book_new();
+      const headers = [
+        'Matrícula', 'Centro de custo', 'Colaborador', 'User Jira', 'User Blip', 'E-mail',
+        'Reporte', 'Status', 'Célula', 'Grupo', 'Tipo', 'Horario', 'Escala', 'Saida',
+        'Admissão', 'Tempo Meses', 'Cargo', 'Cpf', 'Data Nasc', 'Idade', 'Sexo',
+        'Filial', 'Área', 'Telefone', 'Data Limite', 'Primeiro dia férias', 'Período'
+      ];
 
-      preencherFiltrosRelatorioMOP();
-      renderizarRelatorioMOP();
+      const rows = dados.map(colaboradorParaLinhaMOP);
+      const sheet = xlsx.utils.aoa_to_sheet([headers, ...rows]);
+      aplicarFormatoMOP(sheet, rows.length, xlsx);
+
+      xlsx.utils.book_append_sheet(workbook, sheet, 'MOP');
+      xlsx.writeFile(workbook, `MOP_colaboradores_${dataHojeMOP()}.xlsx`, { cellDates: true });
+      window.toast?.('Planilha MOP exportada com sucesso!', 'success');
     } catch (e) {
-      const body = document.getElementById('mop-report-body');
-      if (body) body.innerHTML = '<tr><td colspan="15"><div class="empty-state"><div class="empty-title">Erro ao carregar relatório</div></div></td></tr>';
-      window.toast?.('Erro ao carregar relatório', 'error');
+      window.toast?.('Erro ao gerar planilha MOP: ' + (e.message || e), 'error');
     }
   }
 
-  function montarLinhasRelatorioMOP(colaboradores, staff, programacoes, escalas) {
-    const staffPorNome = new Map((staff || []).map(s => [normalizarTexto(s.nome), s]));
-    const programacoesPorColaborador = agruparPorColaborador(programacoes || [], 'data_inicio');
-    const escalasPorColaborador = agruparPorColaborador(escalas || [], 'data');
+  function colaboradorParaLinhaMOP(c) {
+    return [
+      matriculaMOP(c.matricula),
+      c.centro_custo || 'Mêntore',
+      c.nome || '',
+      c.user_jira || (c.nome ? `${c.nome} | Mêntore Bank` : ''),
+      c.user_blip || nomeCurtoMOP(c.nome),
+      c.email || '',
+      c.reporte || c.supervisor || '',
+      c.status || '',
+      c.celula || '',
+      c.grupo || '',
+      c.tipo || '',
+      horarioExcelMOP(c.horario),
+      horarioExcelMOP(c.escala),
+      null,
+      dataExcelMOP(c.admissao),
+      null,
+      c.cargo || '',
+      c.cpf || '',
+      dataExcelMOP(c.data_nasc),
+      null,
+      c.sexo || '',
+      c.filial || '',
+      c.area || '',
+      c.telefone || '',
+      dataExcelMOP(c.data_limite),
+      dataExcelMOP(c.primeiro_dia_ferias),
+      periodoFeriasMOP(c)
+    ];
+  }
 
-    return (colaboradores || []).map(c => {
-      const supervisor = c.supervisor || c.reporte || '';
-      const lider = staffPorNome.get(normalizarTexto(supervisor));
-      const programacao = primeiraProgramacao(programacoesPorColaborador.get(String(c.id)) || []);
-      const ultimaEscala = (escalasPorColaborador.get(String(c.id)) || [])[0];
+  function obterBibliotecaXLSXMOP() {
+    return new Promise(resolve => {
+      if (window.__xlsxStyleMOPLoaded) return resolve(window.XLSX);
+      if (document.getElementById('xlsx-style-mop-lib')) return resolve(window.XLSX);
 
-      return {
-        matricula: c.matricula || '',
-        colaborador: c.nome || '',
-        celula: c.celula || '',
-        grupo: c.grupo || '',
-        cargo: c.cargo || '',
-        horario: c.horario || '',
-        escala: c.escala || '',
-        filial: c.filial || '',
-        supervisor,
-        liderCargo: lider?.cargo || '',
-        admissao: c.admissao || '',
-        admissaoFmt: formatarDataMOP(c.admissao),
-        tempo: calcularTempoCasaMOP(c.admissao, c.tempo_meses),
-        status: c.status || '',
-        ferias: formatarFeriasMOP(c),
-        programacao: programacao ? `${programacao.tipo || '-'} (${formatarDataMOP(programacao.data_inicio)}${programacao.data_fim ? ' a ' + formatarDataMOP(programacao.data_fim) : ''})` : '',
-        ultimaEscala: ultimaEscala ? `${formatarDataMOP(ultimaEscala.data)} - ${ultimaEscala.tipo_alteracao || ultimaEscala.status || ultimaEscala.horario || 'Trabalho'}` : ''
+      const script = document.createElement('script');
+      script.id = 'xlsx-style-mop-lib';
+      script.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+      script.onload = () => {
+        window.__xlsxStyleMOPLoaded = true;
+        resolve(window.XLSX);
       };
+      script.onerror = () => resolve(window.XLSX);
+      document.head.appendChild(script);
     });
   }
 
-  function preencherFiltrosRelatorioMOP() {
-    const estado = window.__relatorioMOP;
-    const statusSelect = document.getElementById('mop-report-status');
-    const supervisorSelect = document.getElementById('mop-report-supervisor');
-    const busca = document.getElementById('mop-report-search');
-    if (!estado || !statusSelect || !supervisorSelect || !busca) return;
+  function aplicarFormatoMOP(sheet, rowCount, xlsx) {
+    const widths = [12.66, 18, 24.66, 34, 13.33, 26.78, 12.55, 10.33, 13.11, 10.33, 8.78, 11.33, 10.55, 9.66, 13.11, 16.33, 14.44, 11.11, 13.22, 9.89, 9.33, 13.22, 9.55, 12.44, 14.22, 19.78, 11.55];
+    sheet['!cols'] = widths.map(wch => ({ wch }));
+    sheet['!autofilter'] = { ref: `A1:AA${rowCount + 1}` };
+    sheet['!freeze'] = { xSplit: 0, ySplit: 1 };
 
-    const status = [...new Set(estado.linhas.map(l => l.status).filter(Boolean))].sort();
-    const supervisores = [...new Set(estado.linhas.map(l => l.supervisor).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-    statusSelect.innerHTML = '<option value="">Todos status</option>' + status.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
-    supervisorSelect.innerHTML = '<option value="">Todos supervisores</option>' + supervisores.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    const headerStyle = {
+      fill: { fgColor: { rgb: '0A3041' } },
+      font: { bold: true, color: { rgb: 'FFFFFF' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: bordaMOP()
+    };
+    const dataStyle = {
+      fill: { fgColor: { rgb: 'F2F2F2' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: bordaMOP()
+    };
 
-    busca.value = estado.filtros.busca || '';
-    statusSelect.value = estado.filtros.status || '';
-    supervisorSelect.value = estado.filtros.supervisor || '';
-
-    busca.addEventListener('input', e => atualizarFiltroRelatorioMOP('busca', e.target.value));
-    statusSelect.addEventListener('change', e => atualizarFiltroRelatorioMOP('status', e.target.value));
-    supervisorSelect.addEventListener('change', e => atualizarFiltroRelatorioMOP('supervisor', e.target.value));
-  }
-
-  function atualizarFiltroRelatorioMOP(campo, valor) {
-    window.__relatorioMOP.filtros[campo] = valor;
-    renderizarRelatorioMOP();
-  }
-
-  function renderizarRelatorioMOP() {
-    const estado = window.__relatorioMOP;
-    const body = document.getElementById('mop-report-body');
-    const summary = document.getElementById('mop-report-summary');
-    if (!estado || !body) return;
-
-    const linhas = filtrarLinhasRelatorioMOP(estado.linhas);
-    window.__relatorioMOPFiltrado = linhas;
-
-    if (summary) {
-      const ativos = estado.linhas.filter(l => normalizarTexto(l.status) === 'ativo').length;
-      const ferias = estado.linhas.filter(l => /ferias|férias/i.test(l.status) || l.ferias).length;
-      const programadas = estado.linhas.filter(l => l.programacao).length;
-      summary.innerHTML = `
-        <div class="mop-report-kpi"><span>Total</span><strong>${estado.linhas.length}</strong></div>
-        <div class="mop-report-kpi"><span>Ativos</span><strong>${ativos}</strong></div>
-        <div class="mop-report-kpi"><span>Férias</span><strong>${ferias}</strong></div>
-        <div class="mop-report-kpi"><span>Programações</span><strong>${programadas}</strong></div>
-      `;
+    for (let col = 0; col < 27; col++) {
+      const cell = sheet[xlsx.utils.encode_cell({ r: 0, c: col })];
+      if (cell) cell.s = headerStyle;
     }
 
-    body.innerHTML = linhas.length ? linhas.map(l => `
-      <tr>
-        <td class="font-mono">${esc(l.matricula) || '-'}</td>
-        <td><span class="mop-report-name">${esc(l.colaborador) || '-'}</span></td>
-        <td>${esc(l.celula) || '-'}</td>
-        <td>${esc(l.grupo) || '-'}</td>
-        <td>${esc(l.cargo) || '-'}</td>
-        <td>${esc(l.horario) || '-'}</td>
-        <td>${esc(l.escala) || '-'}</td>
-        <td>${esc(l.filial) || '-'}</td>
-        <td>${esc(l.supervisor) || '-'}</td>
-        <td>${esc(l.admissaoFmt) || '-'}</td>
-        <td>${esc(l.tempo) || '-'}</td>
-        <td>${statusRelatorioMOP(l.status)}</td>
-        <td>${esc(l.ferias) || '-'}</td>
-        <td>${esc(l.programacao) || '-'}</td>
-        <td>${esc(l.ultimaEscala) || '-'}</td>
-      </tr>
-    `).join('') : '<tr><td colspan="15"><div class="empty-state"><div class="empty-title">Nenhum registro encontrado</div></div></td></tr>';
-  }
+    for (let row = 1; row <= rowCount; row++) {
+      const excelRow = row + 1;
+      for (let col = 0; col < 27; col++) {
+        const ref = xlsx.utils.encode_cell({ r: row, c: col });
+        if (!sheet[ref]) sheet[ref] = { t: 's', v: '' };
+        sheet[ref].s = dataStyle;
+      }
 
-  function filtrarLinhasRelatorioMOP(linhas) {
-    const filtros = window.__relatorioMOP?.filtros || {};
-    const busca = normalizarTexto(filtros.busca);
-    return [...(linhas || [])]
-      .filter(l => !filtros.status || l.status === filtros.status)
-      .filter(l => !filtros.supervisor || l.supervisor === filtros.supervisor)
-      .filter(l => !busca || normalizarTexto(Object.values(l).join(' ')).includes(busca))
-      .sort((a, b) => String(a.colaborador).localeCompare(String(b.colaborador), 'pt-BR'));
-  }
-
-  function exportarRelatorioMOP(formato = 'xlsx') {
-    if (window.Security && !Security.requirePermission('exportar_relatorios')) return;
-    const linhas = window.__relatorioMOPFiltrado || window.__relatorioMOP?.linhas || [];
-    if (!linhas.length) {
-      window.toast?.('Sem dados para exportar', 'warning');
-      return;
+      definirFormato(sheet, `A${excelRow}`, '0000');
+      definirFormato(sheet, `L${excelRow}`, 'hh:mm:ss');
+      definirFormato(sheet, `M${excelRow}`, 'hh:mm:ss');
+      definirFormula(sheet, `N${excelRow}`, `IF(OR(L${excelRow}="",M${excelRow}=""),"",L${excelRow}+M${excelRow})`, 'hh:mm:ss');
+      definirFormato(sheet, `O${excelRow}`, 'mm-dd-yy');
+      definirFormula(sheet, `P${excelRow}`, `IF(O${excelRow}="","",DATEDIF(O${excelRow},TODAY(),"m"))`, '0');
+      definirFormato(sheet, `S${excelRow}`, 'mm-dd-yy');
+      definirFormula(sheet, `T${excelRow}`, `IF(S${excelRow}="","",DATEDIF(S${excelRow},TODAY(),"y"))`, '0');
+      definirFormato(sheet, `Y${excelRow}`, 'mm-dd-yy');
+      definirFormato(sheet, `Z${excelRow}`, 'mm-dd-yy');
     }
-
-    const headers = ['Matrícula', 'Colaborador', 'Célula', 'Grupo', 'Cargo', 'Horário', 'Escala', 'Filial', 'Supervisor', 'Admissão', 'Tempo', 'Status', 'Férias', 'Programação', 'Última escala'];
-    const rows = linhas.map(l => [l.matricula, l.colaborador, l.celula, l.grupo, l.cargo, l.horario, l.escala, l.filial, l.supervisor, l.admissaoFmt, l.tempo, l.status, l.ferias, l.programacao, l.ultimaEscala]);
-    const nome = `relatorio_mop_${dataHojeRelatorioMOP()}`;
-
-    if (formato === 'xlsx' && window.XLSX) {
-      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-      ws['!cols'] = headers.map(h => ({ wch: Math.max(12, h.length + 4) }));
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'MOP');
-      XLSX.writeFile(wb, `${nome}.xlsx`);
-    } else {
-      const csv = [headers, ...rows]
-        .map(row => row.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(','))
-        .join('\n');
-      baixarRelatorioMOP(csv, `${nome}.csv`, 'text/csv;charset=utf-8');
-    }
-    window.toast?.('Relatório MOP exportado com sucesso', 'success');
   }
 
-  function agruparPorColaborador(lista, campoData) {
-    const map = new Map();
-    [...lista].sort((a, b) => String(b[campoData] || '').localeCompare(String(a[campoData] || ''))).forEach(item => {
-      const id = String(item.colaborador_id || '');
-      if (!id) return;
-      if (!map.has(id)) map.set(id, []);
-      map.get(id).push(item);
+  function definirFormula(sheet, ref, formula, formato) {
+    const atual = sheet[ref] || {};
+    sheet[ref] = { ...atual, t: 'n', f: formula, z: formato, s: atual.s };
+  }
+
+  function definirFormato(sheet, ref, formato) {
+    if (sheet[ref]) sheet[ref].z = formato;
+  }
+
+  function bordaMOP() {
+    const linha = { style: 'hair', color: { rgb: '808080' } };
+    return { top: linha, right: linha, bottom: linha, left: linha };
+  }
+
+  function matriculaMOP(valor) {
+    const texto = String(valor || '').trim();
+    if (/^\d+$/.test(texto)) return Number(texto);
+    return texto;
+  }
+
+  function horarioExcelMOP(valor) {
+    if (typeof valor === 'number') return valor;
+    const match = String(valor || '').match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (!match) return valor || '';
+    const h = Number(match[1]);
+    const m = Number(match[2]);
+    const s = Number(match[3] || 0);
+    return (h * 3600 + m * 60 + s) / 86400;
+  }
+
+  function dataExcelMOP(valor) {
+    if (!valor) return '';
+    const data = new Date(`${String(valor).slice(0, 10)}T00:00:00`);
+    return Number.isNaN(data.getTime()) ? '' : data;
+  }
+
+  function nomeCurtoMOP(nome) {
+    const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
+    if (!partes.length) return '';
+    if (partes.length === 1) return partes[0];
+    return `${partes[0]} ${partes[partes.length - 1]}`;
+  }
+
+  function periodoFeriasMOP(c) {
+    if (!c.primeiro_dia_ferias || !c.ultimo_dia_ferias) return '';
+    const ini = new Date(`${String(c.primeiro_dia_ferias).slice(0, 10)}T00:00:00`);
+    const fim = new Date(`${String(c.ultimo_dia_ferias).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(ini.getTime()) || Number.isNaN(fim.getTime())) return '';
+    const dias = Math.ceil((fim - ini) / 86400000) + 1;
+    return `${dias} ${dias === 1 ? 'Dia' : 'Dias'}`;
+  }
+
+  function ajustarBotaoRelatorioColaboradores() {
+    document.querySelectorAll('button[onclick*="gerarRelatorio"][onclick*="colaboradores"]').forEach(btn => {
+      btn.textContent = 'Excel MOP';
+      btn.title = 'Exportar colaboradores no formato da planilha MOP';
     });
-    return map;
   }
 
-  function primeiraProgramacao(programacoes) {
-    const hoje = dataHojeRelatorioMOP();
-    return [...programacoes]
-      .filter(p => String(p.status || '').toLowerCase() !== 'cancelado')
-      .sort((a, b) => {
-        const aFuturo = String(a.data_inicio || '') >= hoje ? 0 : 1;
-        const bFuturo = String(b.data_inicio || '') >= hoje ? 0 : 1;
-        return aFuturo - bFuturo || String(a.data_inicio || '').localeCompare(String(b.data_inicio || ''));
-      })[0];
-  }
-
-  function calcularTempoCasaMOP(admissao, tempoMeses) {
-    let meses = Number.isFinite(Number(tempoMeses)) ? Number(tempoMeses) : null;
-    if (meses == null && admissao) {
-      const adm = new Date(`${admissao}T00:00:00`);
-      const hoje = new Date();
-      meses = (hoje.getFullYear() - adm.getFullYear()) * 12 + (hoje.getMonth() - adm.getMonth());
-      if (hoje.getDate() < adm.getDate()) meses -= 1;
-    }
-    if (meses == null || meses < 0) return '';
-    const anos = Math.floor(meses / 12);
-    const resto = meses % 12;
-    const partes = [];
-    if (anos) partes.push(`${anos} ${anos === 1 ? 'ano' : 'anos'}`);
-    if (resto || !partes.length) partes.push(`${resto} ${resto === 1 ? 'mês' : 'meses'}`);
-    return partes.join(' e ');
-  }
-
-  function formatarFeriasMOP(c) {
-    if (!c.primeiro_dia_ferias && !c.ultimo_dia_ferias) return '';
-    if (c.primeiro_dia_ferias && c.ultimo_dia_ferias) return `${formatarDataMOP(c.primeiro_dia_ferias)} a ${formatarDataMOP(c.ultimo_dia_ferias)}`;
-    return formatarDataMOP(c.primeiro_dia_ferias || c.ultimo_dia_ferias);
-  }
-
-  function statusRelatorioMOP(status) {
-    const label = esc(status || '-');
-    const classe = /ferias|férias/i.test(status) ? 'ferias' : (/inativo|bloqueado/i.test(status) ? 'inativo' : '');
-    return `<span class="mop-report-status ${classe}">${label}</span>`;
-  }
-
-  function formatarDataMOP(data) {
-    if (!data) return '';
-    const [ano, mes, dia] = String(data).slice(0, 10).split('-');
-    if (!ano || !mes || !dia) return String(data);
-    return `${dia}/${mes}/${ano}`;
-  }
-
-  function dataHojeRelatorioMOP() {
+  function dataHojeMOP() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-
-  function baixarRelatorioMOP(conteudo, nome, tipo) {
-    const blob = new Blob([conteudo], { type: tipo });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = nome;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  function normalizarTexto(valor) {
-    return String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-  }
-
-  function esc(valor) {
-    if (typeof window.escapeHtml === 'function') return window.escapeHtml(valor);
-    return String(valor ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 })();
