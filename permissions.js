@@ -158,10 +158,10 @@
 
 (function () {
   document.addEventListener('DOMContentLoaded', () => {
-    if (document.getElementById('relatorios-mop-script')) return;
+    if (document.getElementById('colaboradores-mop-export-script')) return;
     const script = document.createElement('script');
-    script.id = 'relatorios-mop-script';
-    script.src = 'relatorios-mop.js';
+    script.id = 'colaboradores-mop-export-script';
+    script.src = 'colaboradores-mop-export.js?v=20260605-1';
     document.body.appendChild(script);
   });
 })();
