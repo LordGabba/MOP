@@ -158,6 +158,16 @@
 
 (function () {
   document.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('relatorios-mop-script')) return;
+    const script = document.createElement('script');
+    script.id = 'relatorios-mop-script';
+    script.src = 'relatorios-mop.js';
+    document.body.appendChild(script);
+  });
+})();
+
+(function () {
+  document.addEventListener('DOMContentLoaded', () => {
     setTimeout(instalarVisualizacaoTabelaEscalas, 900);
     document.addEventListener('auth:ready', () => setTimeout(instalarVisualizacaoTabelaEscalas, 300));
   });
